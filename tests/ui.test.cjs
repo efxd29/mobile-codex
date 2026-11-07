@@ -440,6 +440,23 @@ test('RDC exposes independent OAuth login and logout controls and refresh reload
  assert.ok(calls.some(c=>c.action==='terminal.run'&&c.args.command==="codex mcp logout 'remote-desktop-commander'"));
  assert.ok(calls.some(c=>c.action==='rpc'&&c.args.method==='mcpServerStatus/list'));
 });
+test('closing and reopening the tools menu reloads plugins, skills and MCP servers',async()=>{
+ const {w,calls}=setup({'rpc':m=>{
+  if(m.args.method==='plugin/list')return {marketplaces:[{name:'local',plugins:[{name:'Minecraft plugin',id:'minecraft-plugin'}]}]};
+  if(m.args.method==='skills/list')return {data:[{skills:[{name:'mc-server',description:'Minecraft server helper',path:'/skills/mc/SKILL.md',enabled:true}]}]};
+  if(m.args.method==='mcpServerStatus/list')return {data:[{name:'remote-desktop-commander',authStatus:'connected',tools:{desktop:{}}}]};
+  return {};
+ }},{language:'en'});
+ await tick();const d=w.document;
+ d.getElementById('show-tools').click();await tick();d.getElementById('show-tools-panel').click();await tick();await tick();
+ for(const name of ['Minecraft plugin','mc-server','remote-desktop-commander'])assert.match(d.getElementById('tools-list').textContent,new RegExp(name));
+ d.querySelector('[data-close="tools-dialog"]').click();assert.equal(d.getElementById('tools-dialog').open,false);
+ d.getElementById('show-tools').click();await tick();d.getElementById('show-tools-panel').click();await tick();await tick();
+ for(const name of ['Minecraft plugin','mc-server','remote-desktop-commander'])assert.match(d.getElementById('tools-list').textContent,new RegExp(name));
+ assert.equal(calls.filter(c=>c.action==='rpc'&&c.args.method==='plugin/list').length,2);
+ assert.equal(calls.filter(c=>c.action==='rpc'&&c.args.method==='skills/list').length,2);
+ assert.equal(calls.filter(c=>c.action==='rpc'&&c.args.method==='mcpServerStatus/list').length,2);
+});
 test('tool recovery action keeps protocol failures handled after menu relocation',async()=>{
  const {w}=setup({'recovery.list':()=>{throw new Error('recovery offline');}});let unhandled=0;
  w.addEventListener('unhandledrejection',()=>unhandled++);await tick();
