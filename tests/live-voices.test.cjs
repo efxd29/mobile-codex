@@ -32,7 +32,7 @@ test('voice groups only contain available voices and preserve unclassified addit
     {label:'German', ids:['miko']},
     {label:'Other', ids:['arbor', 'future_voice']},
   ]);
-  assert.deepEqual(voiceGroups(['cove']), [{label:'미국 영어', ids:['cove']}]);
+  assert.deepEqual(voiceGroups(['cove']), [{label:'English (US)', ids:['cove']}]);
   assert.deepEqual(voiceGroups([]), []);
   assert.equal(voiceName('hanul'), 'Hanul');
   assert.equal(voiceName('haetsal'), 'Haetsal');
