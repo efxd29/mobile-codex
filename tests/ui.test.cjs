@@ -454,9 +454,12 @@ test('closing and reopening the tools menu reloads plugins, skills and MCP serve
  d.querySelector('[data-close="tools-dialog"]').click();assert.equal(d.getElementById('tools-dialog').open,false);
  d.getElementById('show-tools').click();await tick();d.getElementById('show-tools-panel').click();await tick();await tick();
  for(const name of ['Minecraft plugin','mc-server','remote-desktop-commander'])assert.match(d.getElementById('tools-list').textContent,new RegExp(name));
- assert.equal(calls.filter(c=>c.action==='rpc'&&c.args.method==='plugin/list').length,2);
- assert.equal(calls.filter(c=>c.action==='rpc'&&c.args.method==='skills/list').length,2);
+ const pluginCalls=calls.filter(c=>c.action==='rpc'&&c.args.method==='plugin/list');
+ const skillCalls=calls.filter(c=>c.action==='rpc'&&c.args.method==='skills/list');
+ assert.equal(pluginCalls.length,2);assert.ok(pluginCalls.every(c=>c.args.params.forceRefetch===true));
+ assert.equal(skillCalls.length,2);assert.ok(skillCalls.every(c=>c.args.params.forceReload===true));
  assert.equal(calls.filter(c=>c.action==='rpc'&&c.args.method==='mcpServerStatus/list').length,2);
+ assert.equal(calls.filter(c=>c.action==='rpc'&&c.args.method==='config/mcpServer/reload').length,2);
 });
 test('tool recovery action keeps protocol failures handled after menu relocation',async()=>{
  const {w}=setup({'recovery.list':()=>{throw new Error('recovery offline');}});let unhandled=0;
