@@ -28,9 +28,9 @@ test('new voices retain filtering, deduplication and a valid default', () => {
 
 test('voice groups only contain available voices and preserve unclassified additions', () => {
   assert.deepEqual(voiceGroups(['cove', 'miko', 'arbor', 'future_voice']), [
-    {label:'미국 영어', ids:['cove']},
-    {label:'독일어', ids:['miko']},
-    {label:'기타', ids:['arbor', 'future_voice']},
+    {label:'English (US)', ids:['cove']},
+    {label:'German', ids:['miko']},
+    {label:'Other', ids:['arbor', 'future_voice']},
   ]);
   assert.deepEqual(voiceGroups(['cove']), [{label:'미국 영어', ids:['cove']}]);
   assert.deepEqual(voiceGroups([]), []);
