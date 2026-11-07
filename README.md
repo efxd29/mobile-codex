@@ -60,7 +60,7 @@ Mobile Codex is an independent Android client built around the Codex app-server.
 ## 0.2.13 update
 
 - **Codex Live:** Talk with Codex, give project work instructions by voice, and hear the results using your existing account.
-- **Voice settings:** Choose from the runtime's 25 voices in a collapsible list. Confirmed language groups appear together; Korean voices are labeled 한울 and 햇살.
+- **Voice settings:** Choose from the runtime's 25 voices in a collapsible list. Confirmed language groups appear together.
 - **Model controls:** A compact model picker, English reasoning levels, and task permissions in one place. [Release notes](docs/releases/0.2.13.md).
 
 ## 0.2.12 fix
