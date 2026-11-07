@@ -20,7 +20,7 @@ jobs:
     name: Fast UI and source checks
     outputs:
       tested: ${{ steps.reuse.outputs.tested }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Allow slow cold-runner apt downloads plus the complete browser matrix.
     timeout-minutes: 20
     steps:
@@ -77,7 +77,7 @@ jobs:
   build:
     name: Build verified APK once
     needs: checks
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
       PRODUCTION_APK: app/build/outputs/apk/release/app-release-unsigned.apk
