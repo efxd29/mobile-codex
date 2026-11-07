@@ -267,6 +267,15 @@ jobs:
           compression-level: 0
           if-no-files-found: error
           retention-days: 7
+      - name: Upload unsigned APK for fork pull requests
+        if: github.event_name == 'pull_request' && github.repository != 'SeeUSoon93/mobile-codex'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: mobile-codex-pr-unsigned-apk
+          path: app/build/outputs/apk/release/app-release-unsigned.apk
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 7
       - name: Upload private pull request test APK
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: env.PRIVATE_TEST_PR == 'true'
