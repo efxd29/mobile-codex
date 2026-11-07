@@ -391,7 +391,7 @@ test('question UI preserves stable question ids and answer array',async()=>{
 test('plugin, skill, MCP screens query real protocol routes',async()=>{
  const {w,calls}=setup();await tick();w.document.getElementById('show-tools').click();await tick();w.document.getElementById('show-tools-panel').click();await tick();await tick();
  const routes=calls.filter(m=>m.action==='rpc').map(m=>m.args.method);
- assert.deepEqual(routes,['plugin/list','skills/list','mcpServerStatus/list']);
+ assert.deepEqual(routes,['config/mcpServer/reload','plugin/list','skills/list','mcpServerStatus/list']);
 });
 test('tool refresh keeps a prior category list when one protocol request fails',async()=>{
  let pluginCalls=0;
