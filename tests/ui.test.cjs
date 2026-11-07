@@ -419,6 +419,21 @@ test('plugins, skills and MCP servers have separate tabs with counts and search'
  assert.deepEqual([...panels[2].querySelectorAll('.tool-card')].filter(c=>!c.hidden).map(c=>c.querySelector('strong').textContent),['linear']);
  search.value='nothing matches';search.dispatchEvent(new w.Event('input'));assert.equal(d.querySelector('.tools-no-match').hidden,false);
 });
+test('RDC exposes independent OAuth login and logout controls and refresh reloads MCP config',async()=>{
+ const {w,calls}=setup({'rpc':m=>{
+  if(m.args.method==='mcpServerStatus/list')return {data:[{name:'remote-desktop-commander',authStatus:'unauthenticated',tools:{}}]};
+  if(m.args.method==='config/mcpServer/reload')return {};
+  return {data:[],marketplaces:[]};
+ },'terminal.state':()=>({id:'',revision:0,running:false,output:'',exitCode:null}),
+ 'terminal.run':()=>({id:'logout',revision:1,running:false,output:'Removed OAuth credentials',exitCode:0})},{language:'en'});
+ await tick();w.document.getElementById('show-tools').click();await tick();w.document.getElementById('show-tools-panel').click();await tick();await tick();
+ const card=[...w.document.querySelectorAll('.tool-card')].find(c=>c.textContent.includes('remote-desktop-commander'));
+ assert.ok(card);assert.ok([...card.querySelectorAll('button')].some(b=>b.textContent==='RDC login'));
+ assert.ok([...card.querySelectorAll('button')].some(b=>b.textContent==='RDC logout'));
+ w.document.getElementById('refresh-tools').click();await tick();await tick();
+ assert.ok(calls.some(c=>c.action==='rpc'&&c.args.method==='config/mcpServer/reload'));
+ assert.ok(calls.some(c=>c.action==='rpc'&&c.args.method==='mcpServerStatus/list'));
+});
 test('tool recovery action keeps protocol failures handled after menu relocation',async()=>{
  const {w}=setup({'recovery.list':()=>{throw new Error('recovery offline');}});let unhandled=0;
  w.addEventListener('unhandledrejection',()=>unhandled++);await tick();
@@ -1471,8 +1486,8 @@ test('language switch preserves drafts, model content and editor values',async()
  assert.match(d.getElementById('messages').textContent,/설정 파일 보내기/);assert.match(d.getElementById('messages').textContent,/Copy/);
  assert.match(d.querySelector('[data-prompt]').dataset.prompt,/Look through/);
  assert.equal(calls.filter(x=>['runtime.stop','runtime.start'].includes(x.action)).length,0);
- d.getElementById('language').value='ko';d.getElementById('language').dispatchEvent(new w.Event('change'));await tick();await tick();
- assert.equal(d.getElementById('prompt').value,'기존 초안');assert.match(d.getElementById('settings').textContent,/설정/);
+ assert.deepEqual([...d.getElementById('language').options].map(option=>option.value),['en']);
+ assert.equal(d.getElementById('prompt').value,'기존 초안');assert.match(d.getElementById('settings').textContent,/Settings/);
 });
 test('system locale defaults to English outside Korean and catalog copies match',async()=>{
  const {w}=setup({}, {language:'system',systemLanguage:'ja-JP'});await tick();
