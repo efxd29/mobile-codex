@@ -428,10 +428,16 @@ test('RDC exposes independent OAuth login and logout controls and refresh reload
  'terminal.run':()=>({id:'logout',revision:1,running:false,output:'Removed OAuth credentials',exitCode:0})},{language:'en'});
  await tick();w.document.getElementById('show-tools').click();await tick();w.document.getElementById('show-tools-panel').click();await tick();await tick();
  const card=[...w.document.querySelectorAll('.tool-card')].find(c=>c.textContent.includes('remote-desktop-commander'));
- assert.ok(card);assert.ok([...card.querySelectorAll('button')].some(b=>b.textContent==='RDC login'));
- assert.ok([...card.querySelectorAll('button')].some(b=>b.textContent==='RDC logout'));
+ assert.ok(card);const buttons=[...card.querySelectorAll('button')];
+ const login=buttons.find(b=>b.textContent==='RDC login'),logout=buttons.find(b=>b.textContent==='RDC logout');
+ assert.ok(login);assert.ok(logout);
+ login.click();await tick();
+ assert.ok(calls.some(c=>c.action==='rpc'&&c.args.method==='mcpServer/oauth/login'&&c.args.params.name==='remote-desktop-commander'&&c.args.params.threadId==='t'));
  w.document.getElementById('refresh-tools').click();await tick();await tick();
  assert.ok(calls.some(c=>c.action==='rpc'&&c.args.method==='config/mcpServer/reload'));
+ assert.ok(calls.some(c=>c.action==='rpc'&&c.args.method==='mcpServerStatus/list'));
+ logout.click();await tick();await tick();
+ assert.ok(calls.some(c=>c.action==='terminal.run'&&c.args.command==="codex mcp logout 'remote-desktop-commander'"));
  assert.ok(calls.some(c=>c.action==='rpc'&&c.args.method==='mcpServerStatus/list'));
 });
 test('tool recovery action keeps protocol failures handled after menu relocation',async()=>{
