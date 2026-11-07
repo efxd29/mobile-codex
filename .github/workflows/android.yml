@@ -1,7 +1,7 @@
 name: Android APK
 on:
   push:
-    branches: [main]
+    branches: [main, 'fix/**']
   pull_request:
   workflow_dispatch:
     inputs:
@@ -88,7 +88,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Require the original signing key for update builds
-        if: github.event_name != 'pull_request' || env.PRIVATE_TEST_PR == 'true'
+        if: github.ref == 'refs/heads/main' || env.PRIVATE_TEST_PR == 'true'
         env:
           MOBILE_CODEX_SIGNING_JSON: ${{ secrets.MOBILE_CODEX_SIGNING_JSON }}
         run: python3 tools/sign_ci_apk.py --check-config
@@ -267,8 +267,8 @@ jobs:
           compression-level: 0
           if-no-files-found: error
           retention-days: 7
-      - name: Upload unsigned APK for fork pull requests
-        if: github.event_name == 'pull_request' && github.repository != 'SeeUSoon93/mobile-codex'
+      - name: Upload unsigned APK for fork pull requests and fix branches
+        if: (github.event_name == 'pull_request' && github.repository != 'SeeUSoon93/mobile-codex') || (github.event_name == 'push' && github.ref != 'refs/heads/main')
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: mobile-codex-pr-unsigned-apk
