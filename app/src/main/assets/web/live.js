@@ -13,12 +13,12 @@
   function voiceGroups(ids) {
     // Only classify voices whose language group is confirmed in the ChatGPT picker.
     const known = [
-      ['미국 영어', ['sol', 'ember', 'maple', 'bubbie', 'breeze', 'spruce', 'juniper', 'cove']],
-      ['독일어', ['miko']],
+      ['English (US)', ['sol', 'ember', 'maple', 'bubbie', 'breeze', 'spruce', 'juniper', 'cove']],
+      ['German', ['miko']],
     ];
     const classified = new Set(known.flatMap(([, values]) => values));
     return [...known.map(([label, values]) => ({label, ids:values.filter(id => ids.includes(id))})),
-      {label:'기타', ids:ids.filter(id => !classified.has(id))}].filter(group => group.ids.length);
+      {label:'Other', ids:ids.filter(id => !classified.has(id))}].filter(group => group.ids.length);
   }
   function create({call, getState, getOptions, show, close, t, errorText, changed}) {
     const $ = id => document.getElementById(id);
