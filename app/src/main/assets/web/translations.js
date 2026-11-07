@@ -29,7 +29,6 @@ window.MobileCodexEnglish = {
   "음성 대화 중": "Voice conversation in progress",
   "Codex 작업 중": "Codex is working",
   "음성 설정": "Voice settings",
-  "한국어": "Korean",
   "미국 영어": "American English",
   "독일어": "German",
   "기타": "Other",
