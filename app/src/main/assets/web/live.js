@@ -24,8 +24,8 @@
     const $ = id => document.getElementById(id);
     let current = null, voices = [], loading = false, settings = false;
     let dismissedKey = '', restoringKey = '';
-    let voice = localStorage.getItem('live-voice') || '', language = localStorage.getItem('live-language') || 'auto';
-    if (!['auto', 'en'].includes(language)) language = 'auto';
+    let voice = localStorage.getItem('live-voice') || '', language = localStorage.getItem('live-language') || 'en';
+    if (language !== 'en') language = 'en';
     const active = () => !!current;
     const status = text => { $('live-status').textContent = t(text); };
     function update() {
@@ -73,7 +73,7 @@
         })];
       }));
       syncVoiceChoice();
-      $('live-language').value = ['auto','en'].includes(language) ? language : 'auto';
+      $('live-language').value = 'en';
     }
     function release(session) {
       cancelAnimationFrame(session.frame);
