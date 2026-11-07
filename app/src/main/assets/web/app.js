@@ -2201,6 +2201,16 @@
     if (name === 'reports.available') { reportsUi?.available(); return; }
     if (name.startsWith('live.')) { liveUi?.event(name, data); return; }
     if (name.startsWith('agents.')) { agentUi?.event(name, data); return; }
+    if (name === 'mcpServer/oauthLogin/completed' || name === 'mcpServer/startupStatus/updated') {
+      if (!data.threadId || data.threadId === state.threadId) {
+        if (name === 'mcpServer/oauthLogin/completed' && data.success === false)
+          toast(t('MCP login failed: ') + errorText(data.error || t('Authentication was not completed.')));
+        else if (name === 'mcpServer/oauthLogin/completed' && data.success === true)
+          toast(t('MCP server connected: ') + String(data.name || ''));
+        if ($('tools-dialog').open) loadTools(false).catch(error => toast(errorText(error)));
+      }
+      return;
+    }
     if (name === 'response') { const p = pending.get(data.id); if (p) { clearTimeout(p.timer); pending.delete(data.id); data.error ? p.reject(new Error(data.error)) : p.resolve(data.result || {}); } return; }
     if (name === 'state') render(data);
     else if (name === 'error') { if (!data.threadId || data.threadId === state.threadId) toast(data.message); }
