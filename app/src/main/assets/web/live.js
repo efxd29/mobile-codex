@@ -4,16 +4,15 @@
   function voicesFrom(result) {
     const catalog = result?.voices || {};
     const supported = Array.isArray(catalog.v3) && catalog.v3.length ? catalog.v3 : catalog.v1 || [];
-    const ids = [...new Set(supported.filter(v => typeof v === 'string' && /^[a-z0-9_-]+$/i.test(v)))];
+    const ids = [...new Set(supported.filter(v => typeof v === 'string' && /^[a-z0-9_-]+$/i.test(v) && !['hanul','haetsal'].includes(v.toLowerCase())))];
     return {ids, defaultVoice: ids.includes(catalog.defaultV1) ? catalog.defaultV1 : ids[0] || ''};
   }
   function voiceName(id) {
-    return {hanul:'한울', haetsal:'햇살'}[id] || id[0].toUpperCase() + id.slice(1);
+    return id[0].toUpperCase() + id.slice(1);
   }
   function voiceGroups(ids) {
     // Only classify voices whose language group is confirmed in the ChatGPT picker.
     const known = [
-      ['한국어', ['hanul', 'haetsal']],
       ['미국 영어', ['sol', 'ember', 'maple', 'bubbie', 'breeze', 'spruce', 'juniper', 'cove']],
       ['독일어', ['miko']],
     ];
@@ -73,7 +72,7 @@
         })];
       }));
       syncVoiceChoice();
-      $('live-language').value = ['auto','ko','en'].includes(language) ? language : 'auto';
+      $('live-language').value = ['auto','en'].includes(language) ? language : 'auto';
     }
     function release(session) {
       cancelAnimationFrame(session.frame);
