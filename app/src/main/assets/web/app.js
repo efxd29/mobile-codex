@@ -2537,7 +2537,7 @@
       if (terminalState.id === session.id && !terminalState.stopping) $('terminal-status').textContent = errorText(error.message);
     } finally { terminalSending = false; terminalControls(); $('terminal-command').focus(); }
   }, 'submit');
-  on('show-tools', () => show('tool-menu-dialog')); on('show-tools-panel', () => { closeToolMenu(); return loadTools(false); }); on('refresh-tools', () => loadTools(true));
+  on('show-tools', () => show('tool-menu-dialog')); on('show-tools-panel', () => { closeToolMenu(); return loadTools(true); }); on('refresh-tools', () => loadTools(true));
   on('marketplace-add', async () => { const source = await input(t('마켓플레이스 추가'), t('Git URL 또는 기기의 로컬 경로')); if (source) { const result = await rpc('marketplace/add', {source}); toast(result.marketplaceName + t(' 추가 완료')); await loadTools(); } });
   on('skill-import', async () => { const r = await call('skills.import'); if (!r.cancelled) { toast(t('스킬 폴더를 가져왔습니다.')); await loadTools(); } });
   $('request-dialog').addEventListener('cancel', e => e.preventDefault());
