@@ -433,6 +433,7 @@ test('RDC exposes independent OAuth login and logout controls and refresh reload
  assert.ok(login);assert.ok(logout);
  login.click();await tick();
  assert.ok(calls.some(c=>c.action==='rpc'&&c.args.method==='mcpServer/oauth/login'&&c.args.params.name==='remote-desktop-commander'&&c.args.params.threadId==='t'));
+ w.mobileCodexEvent('mcpServer/oauthLogin/completed',{name:'remote-desktop-commander',threadId:'t',success:true});await tick();await tick();
  w.document.getElementById('refresh-tools').click();await tick();await tick();
  assert.ok(calls.some(c=>c.action==='rpc'&&c.args.method==='config/mcpServer/reload'));
  assert.ok(calls.some(c=>c.action==='rpc'&&c.args.method==='mcpServerStatus/list'));
