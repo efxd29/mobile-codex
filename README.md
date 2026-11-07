@@ -11,7 +11,7 @@ If Play Protect blocks the APK installation, follow these steps temporarily:
 
 The APK-opening app may separately require **Allow from this source**. Menu names can vary by Android version; see [Google's official Play Protect help](https://support.google.com/android/answer/2812853?hl=en).
 
-**English** · [한국어](README.ko.md)
+**English-only interface**
 
 <p align="center"><img src="app/src/main/assets/web/codex-logo.png" alt="Mobile Codex logo" width="144" /></p>
 
