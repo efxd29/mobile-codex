@@ -25,6 +25,7 @@
     let current = null, voices = [], loading = false, settings = false;
     let dismissedKey = '', restoringKey = '';
     let voice = localStorage.getItem('live-voice') || '', language = localStorage.getItem('live-language') || 'auto';
+    if (!['auto', 'en'].includes(language)) language = 'auto';
     const active = () => !!current;
     const status = text => { $('live-status').textContent = t(text); };
     function update() {
