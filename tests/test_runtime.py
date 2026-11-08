@@ -20,6 +20,24 @@ class PackagingTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'checksum mismatch'):
                 runtime.verify(path, integrity)
 
+    def test_ndk_libcxx_override_requires_and_copies_arm64_elf(self):
+        with tempfile.TemporaryDirectory() as root:
+            source = Path(root) / 'ndk' / 'libc++_shared.so'
+            target = Path(root) / 'app' / 'libc++_shared.so'
+            source.parent.mkdir(parents=True)
+            header = bytearray(20)
+            header[:6] = b'\x7fELF\x02\x01'
+            header[18:20] = (183).to_bytes(2, 'little')
+            source.write_bytes(bytes(header) + b'NDK r30 libc++ runtime')
+            runtime.copy_ndk_libcxx(source, target)
+            self.assertEqual(target.read_bytes(), source.read_bytes())
+            self.assertTrue(target.stat().st_mode & 0o111)
+
+            header[18:20] = (62).to_bytes(2, 'little')
+            source.write_bytes(bytes(header) + b'wrong architecture')
+            with self.assertRaisesRegex(ValueError, 'Not an ARM64 ELF'):
+                runtime.copy_ndk_libcxx(source, target)
+
     def test_host_patch_preserves_offsets_and_refuses_new_layouts(self):
         original = b'ELFprefix\0codex-code-mode-host\0padding\0codex-code-mode-host\0suffix'
         patched = runtime.patch_host_name(original)
