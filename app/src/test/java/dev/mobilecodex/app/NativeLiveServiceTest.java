@@ -28,6 +28,10 @@ public class NativeLiveServiceTest {
         public void close() { closed = true; }
     }
     void idle() { shadowOf(Looper.getMainLooper()).idle(); }
+
+    @Test public void nativeRtcUsesPublicStunServersForNatTraversal() {
+        assertEquals(List.of("stun:stun.cloudflare.com:3478", "stun:stun.l.google.com:19302"), NativeLiveRtc.iceServerUrls());
+    }
     @Test public void nativePeerOwnsSignalingMuteAndCleanupWithoutWebView() {
         var controller = Robolectric.buildService(LiveAudioService.class).create();
         try {
