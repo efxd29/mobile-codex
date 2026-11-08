@@ -150,18 +150,20 @@
         show('live-dialog'); setSettings(false);
         if (!document.hidden) animate(current);
       }
-      current.phase = data.phase || current.phase || '';
-      current.connected = !!data.connected; current.muted = !!data.muted;
-      current.input = Number(data.input) || 0; current.output = Number(data.output) || 0;
-      if (data.phase === 'connected') cancelReconnect(current);
-      else if (data.phase === 'failed') { void reconnect(current, 'Voice connection failed. Tap Retry to reconnect.'); return; }
-      else if (data.phase === 'disconnected') scheduleReconnect(current);
-      if (data.threadId) current.localThread = data.threadId;
-      if (data.userCaption !== undefined && !(current.preserveTranscript && data.userCaption === ''))
+      const session = current;
+      if (!session) return;
+      session.phase = data.phase || session.phase || '';
+      session.connected = !!data.connected; session.muted = !!data.muted;
+      session.input = Number(data.input) || 0; session.output = Number(data.output) || 0;
+      if (data.phase === 'connected') cancelReconnect(session);
+      else if (data.phase === 'failed') { void reconnect(session, 'Voice connection failed. Tap Retry to reconnect.'); return; }
+      else if (data.phase === 'disconnected') scheduleReconnect(session);
+      if (data.threadId) session.localThread = data.threadId;
+      if (data.userCaption !== undefined && !(session.preserveTranscript && data.userCaption === ''))
         $('live-caption-user').textContent = data.userCaption;
-      if (data.assistantCaption !== undefined && !(current.preserveTranscript && data.assistantCaption === ''))
+      if (data.assistantCaption !== undefined && !(session.preserveTranscript && data.assistantCaption === ''))
         $('live-caption-assistant').textContent = data.assistantCaption;
-      status(data.phase === 'disconnected' ? 'Reconnecting…' : (current.connected ? (current.muted ? '마이크 꺼짐' : '듣고 있어요') : '연결 중…'));
+      status(data.phase === 'disconnected' ? 'Reconnecting…' : (session.connected ? (session.muted ? '마이크 꺼짐' : '듣고 있어요') : '연결 중…'));
       update(); changed();
     }
     function animate(session) {
