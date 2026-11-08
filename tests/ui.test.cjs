@@ -1530,8 +1530,8 @@ test('edited update source disables old candidate actions and download names its
  assert.equal(w.document.getElementById('update-check').disabled,false);
 });
 
-test('legacy Korean language preferences migrate to English without changing drafts or content',async()=>{
- const {w,snapshot,calls}=setup({}, {language:'ko',systemLanguage:'ko-KR'});await tick();const d=w.document;
+test('English-only UI excludes the Korean choice and preserves drafts or content',async()=>{
+ const {w,snapshot,calls}=setup({}, {language:'en',systemLanguage:'ko-KR'});await tick();const d=w.document;
  const raw='설정 파일 보내기';w.mobileCodexEvent('state',{...snapshot,messages:[{id:'a',role:'assistant',text:raw}]});
  d.getElementById('prompt').value='기존 초안';d.getElementById('prompt').dispatchEvent(new w.Event('input'));
  d.getElementById('editor').value='사용자 파일';d.getElementById('instructions-editor').value='기존 지침';
@@ -1546,8 +1546,8 @@ test('legacy Korean language preferences migrate to English without changing dra
  assert.match(d.querySelector('[data-prompt]').dataset.prompt,/Look through/);
  assert.equal(calls.filter(x=>['runtime.stop','runtime.start'].includes(x.action)).length,0);
 });
-test('system locale and legacy Korean browser choice always render English',async()=>{
- const {w}=setup({}, {language:'system',systemLanguage:'ko-KR'});await tick();
+test('a Korean system locale remains English when the native app selects English',async()=>{
+ const {w}=setup({}, {language:'en',systemLanguage:'ko-KR'});await tick();
  assert.equal(w.document.documentElement.lang,'en');
  assert.match(w.document.getElementById('prompt').placeholder,/Ask Codex/);
  assert.equal(w.MobileCodexLocale.language(),'en');
