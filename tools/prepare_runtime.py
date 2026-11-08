@@ -11,6 +11,8 @@ import json
 from pathlib import Path
 import shutil
 import tarfile
+import time
+import urllib.error
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -26,6 +28,38 @@ def verify(path, integrity):
             h.update(data)
     if h.digest() != base64.b64decode(expected, validate=True):
         raise ValueError('Runtime checksum mismatch; refusing to package')
+
+
+def download_runtime(url, destination, integrity):
+    """Download a pinned runtime with bounded retries for transient GitHub/CDN errors."""
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    partial = destination.with_suffix('.partial')
+    transient_statuses = {408, 425, 429, 500, 502, 503, 504}
+    last_error = None
+    for attempt in range(4):
+        partial.unlink(missing_ok=True)
+        try:
+            with urllib.request.urlopen(url, timeout=300) as src, partial.open('wb') as dst:
+                shutil.copyfileobj(src, dst)
+            try:
+                verify(partial, integrity)
+            except ValueError:
+                partial.unlink(missing_ok=True)
+                raise
+            partial.replace(destination)
+            return
+        except urllib.error.HTTPError as error:
+            partial.unlink(missing_ok=True)
+            if error.code not in transient_statuses or attempt == 3:
+                raise
+            last_error = error
+        except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as error:
+            partial.unlink(missing_ok=True)
+            if attempt == 3:
+                raise
+            last_error = error
+        time.sleep(min(5 * (2 ** attempt), 30))
+    raise RuntimeError(f'Runtime download failed after retries: {url}') from last_error
 
 
 def patch_host_name(binary, expected_occurrences=2):
@@ -46,11 +80,7 @@ def prepare(archive, lock_path=None):
         archive = ROOT / '.runtime-cache' / f"codex-{lock['version']}.tgz"
         archive.parent.mkdir(parents=True, exist_ok=True)
         if not archive.exists():
-            partial = archive.with_suffix('.partial')
-            with urllib.request.urlopen(lock['url'], timeout=180) as src, partial.open('wb') as dst:
-                shutil.copyfileobj(src, dst)
-            verify(partial, lock['integrity'])
-            partial.replace(archive)
+            download_runtime(lock['url'], archive, lock['integrity'])
     verify(archive, lock['integrity'])
     out = ROOT / 'app/src/main/jniLibs/arm64-v8a'
     assets = ROOT / 'app/src/main/assets/runtime'

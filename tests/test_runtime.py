@@ -20,6 +20,24 @@ class PackagingTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'checksum mismatch'):
                 runtime.verify(path, integrity)
 
+    def test_transient_runtime_gateway_errors_retry_pinned_download(self):
+        import io
+        import urllib.error
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as root:
+            destination = Path(root) / 'runtime.tgz'
+            payload = b'verified runtime archive'
+            integrity = 'sha512-' + base64.b64encode(hashlib.sha512(payload).digest()).decode()
+            transient = urllib.error.HTTPError('https://example.test/runtime.tgz', 504, 'Gateway Timeout', {}, None)
+            with patch.object(runtime.urllib.request, 'urlopen', side_effect=[transient, io.BytesIO(payload)]) as fetch, \
+                 patch.object(runtime.time, 'sleep') as sleep:
+                runtime.download_runtime('https://example.test/runtime.tgz', destination, integrity)
+            self.assertEqual(destination.read_bytes(), payload)
+            self.assertFalse(destination.with_suffix('.partial').exists())
+            self.assertEqual(fetch.call_count, 2)
+            sleep.assert_called_once_with(5)
+
     def test_host_patch_preserves_offsets_and_refuses_new_layouts(self):
         original = b'ELFprefix\0codex-code-mode-host\0padding\0codex-code-mode-host\0suffix'
         patched = runtime.patch_host_name(original)
