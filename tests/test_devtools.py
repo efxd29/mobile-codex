@@ -97,7 +97,7 @@ class DevtoolsPackagingTests(unittest.TestCase):
         for unsafe_target in (
             "/system/etc/passwd",
             "/data/data/com.termux/files/usr/../../etc/passwd",
-            "../../../../../../etc/passwd",
+            "../../../../../../../etc/passwd",
         ):
             with self.subTest(target=unsafe_target):
                 with self.assertRaises(devtools.PackagingError):
