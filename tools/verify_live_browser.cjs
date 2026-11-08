@@ -31,7 +31,8 @@ async function fixture(){
     }
     if(action==='live.text')return reply();
     if(action==='live.start'){
-      const state={key:args.key,threadId:fx.state.threadId,phase:'connected',connected:true,muted:false,input:.2,output:.4,userCaption:'',assistantCaption:''};
+      const state={key:args.key,threadId:fx.state.threadId,phase:'connected',connected:true,muted:false,input:.2,output:.4};
+      if(fx.emptyCaptionsOnNextStart){state.userCaption='';state.assistantCaption='';fx.emptyCaptionsOnNextStart=false;}
       fx.peers.push({pc:{connectionState:'connected'},state,key:args.key});
       reply(state);emit('live.audio',state);
     }
@@ -64,7 +65,7 @@ async function main(){
    // keeps the existing peer/session across hide/show and still accepts events.
    const hiddenKey=await page.evaluate(()=>window.__liveFx.calls.find(c=>c.action==='live.start').args.key);
    await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));});
-   await page.evaluate(()=>{const key=window.__liveFx.peers[0].key;window.mobileCodexEvent('live.event',{key,method:'thread/realtime/transcript/done',params:{role:'assistant',text:'background reply'}});});
+   await page.evaluate(()=>{const peer=window.__liveFx.peers[0];peer.state.assistantCaption='background reply';window.mobileCodexEvent('live.event',{key:peer.key,method:'thread/realtime/transcript/done',params:{role:'assistant',text:'background reply'}});});
    await page.waitForFunction(()=>document.querySelector('#live-caption-assistant').textContent==='background reply');
    assert.equal(await page.evaluate(()=>window.__liveFx.calls.filter(c=>c.action==='live.stop').length),0);
    assert.equal(await page.evaluate(()=>window.__liveFx.peers[0].pc.connectionState),'connected');
@@ -76,7 +77,7 @@ async function main(){
    await page.locator('#live-mute').click();assert.equal(await page.locator('#live-mute').getAttribute('aria-pressed'),'true');
    await page.locator('#live-text').fill('read this');await page.locator('#live-text-form').evaluate(form=>form.requestSubmit());
    await page.waitForFunction(()=>window.__liveFx.calls.some(c=>c.action==='live.text'&&c.args.text==='read this'));
-   await page.evaluate(()=>{const key=window.__liveFx.calls.find(c=>c.action==='live.start').args.key;window.mobileCodexEvent('live.event',{key,method:'thread/realtime/transcript/delta',params:{role:'assistant',delta:'<script>safe text</script>'}});});
+   await page.evaluate(()=>{const peer=window.__liveFx.peers[0];peer.state.assistantCaption+='<script>safe text</script>';window.mobileCodexEvent('live.event',{key:peer.key,method:'thread/realtime/transcript/delta',params:{role:'assistant',delta:'<script>safe text</script>'}});});
    assert.equal(await page.locator('#live-caption-assistant').textContent(),'background reply<script>safe text</script>');
    await page.locator('#live-settings-open').click();
    assert.equal(await page.locator('#live-voice').isVisible(),false);
@@ -109,10 +110,11 @@ async function main(){
    if (width===320 && theme==='light') {
      const originalThread=await page.evaluate(()=>window.__liveFx.calls.filter(c=>c.action==='live.start').at(-1).args.expectedThreadId);
      await page.evaluate(()=>{
-       const key=window.__liveFx.peers.at(-1).key;
-       window.mobileCodexEvent('live.event',{key,method:'thread/realtime/transcript/done',params:{role:'user',text:'Keep this transcript after reconnect'}});
-       const peer=window.__liveFx.peers.at(-1);
-       window.mobileCodexEvent('live.audio',{...peer.state,key,phase:'disconnected',connected:false});
+       const peer=window.__liveFx.peers.at(-1),text='Keep this transcript after reconnect';
+       peer.state.userCaption=text;
+       window.mobileCodexEvent('live.event',{key:peer.key,method:'thread/realtime/transcript/done',params:{role:'user',text}});
+       window.__liveFx.emptyCaptionsOnNextStart=true;
+       window.mobileCodexEvent('live.audio',{...peer.state,key:peer.key,phase:'disconnected',connected:false});
      });
      await page.waitForFunction(()=>window.__liveFx.calls.filter(c=>c.action==='live.start').length===3,null,{timeout:12000});
      await page.waitForFunction(()=>document.querySelector('#live-status').textContent==='Listening');
