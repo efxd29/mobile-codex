@@ -116,6 +116,18 @@ jobs:
           packages: 'platforms;android-35 build-tools;35.0.0'
           log-accepted-android-sdk-licenses: false
       - run: python3 -m pip install -r tools/requirements-devtools.txt
+      - name: Refresh stale Termux package pins before a fresh-install build
+        if: github.repository == 'efxd29/mobile-codex' && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.signing.outputs.mode == 'fresh'
+        run: |
+          set -euo pipefail
+          python3 tools/prepare_devtools.py --write-lock
+          if ! git diff --quiet -- tools/devtools-lock.json; then
+            git config --local user.name "github-actions[bot]"
+            git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add tools/devtools-lock.json
+            git commit -m "build(android): refresh pinned Termux developer packages"
+            git push origin HEAD:main
+          fi
       - name: Restore exact prepared runtime
         id: prepared
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
