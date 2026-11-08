@@ -9,6 +9,7 @@ import subprocess
 import urllib.request
 
 ROUTING_FILES = {'.github/workflows/android.yml', 'tools/reuse_ui_checks.py',
+BROWSER_IRRELEVANT_FILES = {'tools/prepare_devtools.py', 'tools/devtools-lock.json', 'tests/test_devtools.py'}
                  'tests/test_reuse_ui_checks.py', 'docs/ci-release.md',
                  '.github/workflows/cleanup-actions.yml', 'tools/cleanup_actions.py', 'tests/test_cleanup_actions.py',
                  'tools/tested_before.py', 'tests/test_tested_before.py'}
@@ -27,6 +28,8 @@ def fingerprint(tree, browser=False):
         if name.startswith('app/src/test/java/') or name in ROUTING_FILES:
             continue
         if browser and name.startswith('app/src/main/java/'):
+            continue
+        if browser and name in BROWSER_IRRELEVANT_FILES:
             continue
         records.append(entry)
     return hashlib.sha256(b'\0'.join(sorted(records))).hexdigest()
