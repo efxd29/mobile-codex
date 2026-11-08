@@ -52,7 +52,7 @@ async function main(){
      window.Audio=class {constructor(){throw Error('WebView must not play audio');}};
    });
    page.on('pageerror',e=>errors.push(e.message));
-   await page.goto('http://127.0.0.1:'+server.address().port+'/app?language=ko&theme='+theme);
+   await page.goto('http://127.0.0.1:'+server.address().port+'/app?language=en&theme='+theme);
    await page.waitForFunction(()=>window.mobileCodexEvent&&window.Native&&document.getElementById('live-start'));
    await page.evaluate(fixture);await page.waitForFunction(()=>window.__liveFx.state);
    await page.locator('#live-start').click();
