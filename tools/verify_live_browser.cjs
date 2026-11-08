@@ -56,7 +56,7 @@ async function main(){
    await page.waitForFunction(()=>window.mobileCodexEvent&&window.Native&&document.getElementById('live-start'));
    await page.evaluate(fixture);await page.waitForFunction(()=>window.__liveFx.state);
    await page.locator('#live-start').click();
-   try { await page.waitForFunction(()=>document.querySelector('#live-status').textContent==='듣고 있어요'); }
+   try { await page.waitForFunction(()=>document.querySelector('#live-status').textContent==='Listening'); }
    catch(error) { console.log(await page.evaluate(()=>({status:document.querySelector('#live-status').textContent,calls:window.__liveFx.calls.map(c=>c.action),peers:window.__liveFx.peers.map(p=>p.pc.connectionState)})),errors); throw error; }
    assert.equal(await page.locator('#live-dialog').evaluate(el=>el.scrollWidth<=el.clientWidth+1),true);
    assert.equal(await page.locator('#live-orb').evaluate(el=>el.getBoundingClientRect().width>100),true);
@@ -71,7 +71,7 @@ async function main(){
    await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:false});document.dispatchEvent(new Event('visibilitychange'));});
    assert.equal(await page.evaluate(()=>window.__liveFx.calls.find(c=>c.action==='live.start').args.key),hiddenKey);
    await page.evaluate(()=>window.mobileCodexEvent('live.interrupted',{key:'stale-call'}));
-   assert.equal(await page.locator('#live-status').textContent(),'듣고 있어요');
+   assert.equal(await page.locator('#live-status').textContent(),'Listening');
    await page.screenshot({path:path.join(out,`live-${captureId}.png`)});
    await page.locator('#live-mute').click();assert.equal(await page.locator('#live-mute').getAttribute('aria-pressed'),'true');
    await page.locator('#live-text').fill('read this');await page.locator('#live-text-form').evaluate(form=>form.requestSubmit());
@@ -84,20 +84,23 @@ async function main(){
    await page.screenshot({path:path.join(out,`settings-collapsed-${captureId}.png`)});
    await page.locator('#live-voice-toggle').click();
    assert.equal(await page.locator('.live-voice-choice').count(),25);
-   assert.deepEqual(await page.locator('.live-voice-group').allTextContents(),['한국어','미국 영어','독일어','기타']);
-   assert.equal(await page.locator('.live-voice-choice').filter({has:page.locator('input[value="haetsal"]')}).textContent(),'햇살');
+   assert.deepEqual(await page.locator('.live-voice-group').allTextContents(),['English (US)','German','Other']);
+   assert.equal(await page.locator('.live-voice-choice').filter({has:page.locator('input[value="maple"]')}).textContent(),'Maple');
+   assert.equal(await page.locator('input[value="hanul"], input[value="haetsal"]').count(),0);
    assert.equal(await page.locator('#live-voice-list').evaluate(el=>el.scrollHeight>el.clientHeight&&el.scrollWidth<=el.clientWidth+1),true);
-   await page.locator('.live-voice-choice').filter({has:page.locator('input[value="hanul"]')}).click();
-   await page.locator('input[name="live-voice-choice"][value="hanul"]').press('ArrowRight');
-   assert.equal(await page.locator('#live-voice').inputValue(),'haetsal');
-   await page.locator('input[name="live-voice-choice"][value="haetsal"]').press('ArrowLeft');
-   assert.equal(await page.locator('#live-voice-name').textContent(),'한울');
+   await page.locator('.live-voice-choice').filter({has:page.locator('input[value="maple"]')}).click();
+   await page.locator('input[name="live-voice-choice"][value="maple"]').press('ArrowRight');
+   assert.equal(await page.locator('#live-voice').inputValue(),'bubbie');
+   await page.locator('input[name="live-voice-choice"][value="bubbie"]').press('ArrowLeft');
+   assert.equal(await page.locator('#live-voice-name').textContent(),'Maple');
    assert.equal(await page.evaluate(()=>window.__liveFx.calls.filter(c=>c.action==='live.start').length),1,'Choosing a voice waits for Apply');
-   await page.locator('#live-language').selectOption('ko');
+   await page.locator('#live-language').selectOption('en');
+   assert.deepEqual(await page.locator('#live-language option').evaluateAll(options=>options.map(option=>option.value)),['en']);
    await page.waitForTimeout(200);
    await page.screenshot({path:path.join(out,`settings-${captureId}.png`)});
    await page.locator('#live-settings-apply').click();await page.waitForFunction(()=>window.__liveFx.calls.filter(c=>c.action==='live.start').length===2&&document.querySelector('#live-status').textContent==='듣고 있어요');
-   assert.equal(await page.evaluate(()=>window.__liveFx.calls.filter(c=>c.action==='live.start')[1].args.voice),'hanul');
+   assert.equal(await page.evaluate(()=>window.__liveFx.calls.filter(c=>c.action==='live.start')[1].args.voice),'maple');
+   assert.equal(await page.evaluate(()=>window.__liveFx.calls.filter(c=>c.action==='live.start')[1].args.language),'en');
    await page.locator('#live-settings-open').click();
    assert.equal(await page.locator('#live-voice-name').textContent(),'한울');
    assert.equal(await page.locator('#live-voice-picker').evaluate(el=>el.open),false);
