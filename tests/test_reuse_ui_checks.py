@@ -26,7 +26,7 @@ class ReuseUiChecksTests(unittest.TestCase):
         base = b'100644 blob aaa' + bytes([9]) + b'app/src/main/assets/web/app.js' + bytes([0])
         changed = base + b''.join(
             b'100644 blob bbb' + bytes([9]) + path.encode() + bytes([0])
-            for path in ['tools/prepare_devtools.py', 'tools/devtools-lock.json', 'tests/test_devtools.py']
+            for path in ['tools/prepare_devtools.py', 'tools/devtools-lock.json', 'tests/test_devtools.py', 'tools/prepare_runtime.py', 'tests/test_runtime.py']
         )
         self.assertEqual(reuse.fingerprint(base, browser=True), reuse.fingerprint(changed, browser=True))
 
