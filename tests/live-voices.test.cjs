@@ -13,7 +13,7 @@ test('Live picker excludes Korean-only voices and uses English labels', () => {
     {label:'Other', ids:['future_voice']},
   ]);
   assert.equal(voiceName('future_voice'),'Future Voice');
-  assert.doesNotMatch(JSON.stringify(groups),/[\\uAC00-\\uD7AF]/);
+  assert.doesNotMatch(JSON.stringify(groups),/[\uAC00-\uD7AF]/);
 });
 
 test('older runtimes without v3 retain supported non-Korean voices', () => {
