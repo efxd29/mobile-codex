@@ -761,7 +761,7 @@ test('Fast toggle is active and sends Fast mode for a model that advertises the 
  w.mobileCodexEvent('state',{...snapshot,models:[fastModel]});
  const d=w.document,control=d.getElementById('fast-mode');
  assert.equal(control.disabled,false);
- control.click();
+ control.click();await tick();
  assert.equal(control.getAttribute('aria-pressed'),'true');
  d.getElementById('prompt').value='Verify Fast mode';
  d.getElementById('composer').dispatchEvent(new w.Event('submit',{cancelable:true}));await tick();
