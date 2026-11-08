@@ -200,8 +200,11 @@ jobs:
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$SIGNED_APK"
           "$ANDROID_HOME/build-tools/35.0.0/zipalign" -c -P 16 4 "$SIGNED_APK"
           mkdir -p artifacts/fresh-install
-          cp "$SIGNED_APK" "artifacts/fresh-install/mobile-codex-0.3.9-arm64.apk"
-          sha256sum "artifacts/fresh-install/mobile-codex-0.3.9-arm64.apk" > "artifacts/fresh-install/mobile-codex-0.3.9-arm64.apk.sha256"
+          VERSION_NAME="$(sed -nE "s/^[[:space:]]*versionName '([^']+)'/\\1/p" app/build.gradle | head -n 1)"
+          test -n "$VERSION_NAME"
+          FRESH_APK="artifacts/fresh-install/mobile-codex-$VERSION_NAME-arm64.apk"
+          cp "$SIGNED_APK" "$FRESH_APK"
+          sha256sum "$FRESH_APK" > "$FRESH_APK.sha256"
           echo "Created and verified a one-time signed install APK."
       - name: Read the currently published version
         if: (github.event_name != 'pull_request' || env.PRIVATE_TEST_PR == 'true') && steps.signing.outputs.mode == 'existing'
