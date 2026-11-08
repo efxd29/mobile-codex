@@ -40,7 +40,7 @@ test('a v3 catalog containing only excluded voices falls back to v1', () => {
   });
 });
 
-function liveHarness() {
+function liveHarness(overrides = {}) {
   const dom = new JSDOM(fs.readFileSync('app/src/main/assets/web/index.html','utf8'), {
     url:'https://appassets.androidplatform.net/index.html',
     runScripts:'outside-only',
@@ -51,7 +51,7 @@ function liveHarness() {
   w.requestAnimationFrame=()=>0; w.cancelAnimationFrame=()=>{};
   w.HTMLDialogElement.prototype.showModal=function(){this.setAttribute('open','');};
   w.HTMLDialogElement.prototype.close=function(){this.removeAttribute('open');this.dispatchEvent(new w.Event('close'));};
-  const state={ready:true,busy:false,proBusy:false,account:{type:'chatgpt'},threadId:'thread-1',live:{key:''},models:[]};
+  const state={ready:true,busy:false,proBusy:false,account:{type:'chatgpt'},accounts:[],threadId:'thread-1',live:{key:''},models:[],...overrides};
   const call=async(action,args={})=>{
     calls.push({action,args});
     if(action==='live.voices')return {voices:{v3:['cove'],defaultV1:'cove'}};
@@ -73,6 +73,15 @@ async function waitFor(predicate) {
   for(let i=0;i<100;i++){if(predicate())return;await wait(10);}
   assert.fail('Timed out waiting for Live action');
 }
+
+test('Live can start from a saved account before the lazy account refresh completes',()=>{
+  const saved=liveHarness({account:{},accounts:[{active:true,needsLogin:false}]});
+  try { saved.ui.update(); assert.equal(saved.w.document.getElementById('live-start').disabled,false); }
+  finally { saved.dom.window.close(); }
+  const missing=liveHarness({account:{},accounts:[]});
+  try { missing.ui.update(); assert.equal(missing.w.document.getElementById('live-start').disabled,true); }
+  finally { missing.dom.window.close(); }
+});
 
 test('Live retries a recoverable network disconnect with a new session key and never replays text', async()=>{
   const {dom,w,ui,calls}=liveHarness();
