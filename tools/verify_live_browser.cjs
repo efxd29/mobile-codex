@@ -114,7 +114,7 @@ async function main(){
        const peer=window.__liveFx.peers.at(-1);
        window.mobileCodexEvent('live.audio',{...peer.state,key,phase:'disconnected',connected:false});
      });
-     await page.waitForFunction(()=>window.__liveFx.calls.filter(c=>c.action==='live.start').length===3,{timeout:12000});
+     await page.waitForFunction(()=>window.__liveFx.calls.filter(c=>c.action==='live.start').length===3,null,{timeout:12000});
      await page.waitForFunction(()=>document.querySelector('#live-status').textContent==='Listening');
      assert.equal(await page.locator('#live-caption-user').textContent(),'Keep this transcript after reconnect');
      assert.equal(await page.evaluate(()=>window.__liveFx.calls.filter(c=>c.action==='live.start')[2].args.expectedThreadId),originalThread);
@@ -127,7 +127,7 @@ async function main(){
        const peer=window.__liveFx.peers.at(-1);
        window.mobileCodexEvent('live.audio',{...peer.state,key:peer.key,phase:'disconnected',connected:false});
      });
-     await page.waitForFunction(()=>!document.querySelector('#live-retry').hidden,{timeout:3000});
+     await page.waitForFunction(()=>!document.querySelector('#live-retry').hidden,null,{timeout:3000});
      assert.equal(await page.evaluate(()=>window.__liveFx.calls.filter(c=>c.action==='live.start').length),3);
    }
    // Notification/focus-loss events also close a hidden call and its audio.
