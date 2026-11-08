@@ -1970,7 +1970,26 @@
     if (toolsScope !== scope) { toolCache.fill(null); toolsScope = scope; }
     if (!toolCache.some(Boolean)) target.replaceChildren(node('p', t('불러오는 중…'), 'muted'));
     const cwds = state.cwd ? [state.cwd] : [];
-    const results = await Promise.allSettled([rpc('plugin/list', {cwds, ...(force ? {forceRefetch:true} : {})}), rpc('skills/list', {cwds, ...(force ? {forceReload:true} : {})}), rpc('mcpServerStatus/list', {limit: 100, ...(state.threadId ? {threadId: state.threadId} : {})})]);
+    let mcpReloadError = null;
+    if (force) {
+      try { await rpc('config/mcpServer/reload', {}); }
+      catch (error) { mcpReloadError = error; }
+    }
+    if (generation !== toolsGeneration || scope !== currentToolsScope()) return;
+    const read = async (method, params) => {
+      try { return await rpc(method, params); }
+      catch {
+        // These are idempotent list reads. One retry absorbs a transient app-server
+        // transport reset without discarding the last known good category cache.
+        await new Promise(resolve => setTimeout(resolve, 120));
+        return rpc(method, params);
+      }
+    };
+    const results = await Promise.allSettled([
+      read('plugin/list', {cwds, ...(force ? {forceRefetch:true} : {})}),
+      read('skills/list', {cwds, ...(force ? {forceReload:true} : {})}),
+      read('mcpServerStatus/list', {detail:'toolsAndAuthOnly', limit:100, ...(state.threadId ? {threadId: state.threadId} : {})})
+    ]);
     if (generation !== toolsGeneration || scope !== currentToolsScope()) return;
     target.replaceChildren();
     // Plugins, skills and MCP servers each get a tab; long lists stay searchable instead of one long scroll.
@@ -1987,6 +2006,7 @@
     const group = (title, parent) => { const g = node('div', null, 'tools-group'); g.append(node('h4', title, 'tools-group-title')); parent.append(g); return g; };
     titles.forEach((title, i) => {
       const panel = panels[i], result = results[i];
+      if (i === 2 && mcpReloadError) card(t('MCP 설정을 새로고침하지 못했습니다'), errorText(mcpReloadError), panel).classList.add('tool-card-notice');
       if (result.status === 'fulfilled') toolCache[i] = result.value;
       const data = result.status === 'fulfilled' ? result.value : toolCache[i];
       if (result.status === 'rejected') { card(t('불러오지 못했습니다'), errorText(result.reason) + (data ? t(' 이전 목록을 표시합니다.') : ''), panel).classList.add('tool-card-notice'); if (!data) return; }
@@ -2029,9 +2049,26 @@
       } else {
         for (const server of data.data || []) {
           counts[2]++;
-          const c = card(server.name, (server.runtimeStatus?.status || server.authStatus) + t(' · 도구 ') + Object.keys(server.tools || {}).length + t('개'), panel);
+          const serverName = String(server.name || '');
+          const status = server.runtimeStatus?.status || (typeof server.authStatus === 'string' ? server.authStatus : server.authStatus?.status) || t('상태 확인 불가');
+          const c = card(serverName, status + t(' · 도구 ') + Object.keys(server.tools || {}).length + t('개'), panel);
           if (server.toolsError) c.querySelector('.tool-card-main').append(node('p', errorText(server.toolsError), 'muted tool-card-error'));
-          actions(c, button(t('도구 보기'), () => { logEvent('MCP: ' + server.name, server); show('activity-dialog'); }), button(t('로그인'), async () => { const r = await rpc('mcpServer/oauth/login', {name: server.name}); await call('ui.externalBrowser', {url: r.authorizationUrl}); }));
+          const normalizedName = serverName.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const isRdc = normalizedName === 'rdc' || normalizedName === 'remotedesktopcommander';
+          const serverActions = [
+            button(t('도구 보기'), () => { logEvent('MCP: ' + serverName, server); show('activity-dialog'); }),
+            button(t('로그인'), async () => {
+              const result = await rpc('mcpServer/oauth/login', {name: serverName});
+              await call('ui.externalBrowser', {url: result.authorizationUrl});
+            })
+          ];
+          if (isRdc) serverActions.push(button(t('로그아웃'), async () => {
+            if (!confirm(t('RDC 계정에서 로그아웃할까요?'))) return;
+            await call('mcp.logout', {name: serverName});
+            toast(t('RDC 계정 연결을 해제했습니다.'));
+            await loadTools(true);
+          }, 'secondary-button subtle-danger'));
+          actions(c, ...serverActions);
         }
         if (!data.data?.length) card(t('설정된 MCP 서버가 없습니다'), t('서버 설정에서 HTTP 또는 stdio 서버를 추가할 수 있습니다.'), panel).classList.add('tool-card-notice');
         if (data.nextCursor) panel.append(node('p', t('표시된 서버: 처음 100개'), 'muted'));
@@ -2337,6 +2374,9 @@
     if (upward && area.scrollTop <= 160) loadEarlierMessages();
   }, {passive:true});
   $('chat-scroll').addEventListener('wheel', e => { if (e.deltaY < 0 && $('chat-scroll').scrollTop <= 160) { following = false; loadEarlierMessages(); } }, {passive:true});
+  // Preserve the prompt's focus so Android WebView does not dismiss the IME
+  // when the Fast toggle is tapped.
+  $('fast-mode').addEventListener('pointerdown', e => { if (e.button === 0) e.preventDefault(); });
   on('fast-mode', () => { if ($('fast-mode').disabled) return; draftOptions.fastMode = draftOptions.fastMode !== true; saveOptions(); updateFastButton(); });
   liveUi = window.MobileCodexLive?.create({call, getState:() => state,
     getOptions:() => ({model:$('model').value, effort:$('effort').value, fastMode:draftOptions.fastMode === true}),

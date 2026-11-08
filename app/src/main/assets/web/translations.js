@@ -1254,5 +1254,11 @@ window.MobileCodexEnglish = {
   "일간 한도": "Daily limit",
   "현재 세션": "Current session",
   "이번 주": "This week",
-  "전체 모델": "All models"
+  "전체 모델": "All models",
+  "로그아웃": "Sign out",
+  "RDC 계정에서 로그아웃할까요?": "Sign out of the RDC account?",
+  "RDC 계정 연결을 해제했습니다.": "The RDC account has been signed out.",
+  "MCP 설정을 새로고침하지 못했습니다": "Could not reload MCP configuration",
+  "잘못된 MCP 서버 이름입니다.": "Invalid MCP server name.",
+  "MCP 로그아웃에 실패했습니다.": "Could not sign out of the MCP server."
 };

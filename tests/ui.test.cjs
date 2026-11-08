@@ -103,6 +103,18 @@ test('Fast is an explicit per-draft lightning toggle next to the model picker',a
  assert.equal(calls.filter(c=>c.action==='chat.send').at(-1).args.fastMode,false);
  assert.equal(calls.some(c=>c.action==='config.write'||c.action==='permissions.set'),false);
 });
+test('Fast toggle keeps prompt focus on pointer down so the Android keyboard can stay open',async()=>{
+ const {w,snapshot}=setup();await tick();const d=w.document;
+ w.mobileCodexEvent('state',{...snapshot,models:[fastModel]});
+ const prompt=d.getElementById('prompt'),toggle=d.getElementById('fast-mode');
+ prompt.focus();
+ const event=new w.MouseEvent('pointerdown',{button:0,bubbles:true,cancelable:true});
+ toggle.dispatchEvent(event);
+ assert.equal(event.defaultPrevented,true);
+ assert.equal(d.activeElement,prompt);
+ toggle.click();await tick();
+ assert.equal(toggle.getAttribute('aria-pressed'),'true');
+});
 test('Fast stays unavailable for unsupported models and sends only the selected Codex request',async()=>{
  const {w,calls,snapshot}=setup();await tick();const d=w.document,toggle=d.getElementById('fast-mode');
  assert.equal(toggle.disabled,true);
@@ -404,6 +416,48 @@ test('tool refresh keeps a prior category list when one protocol request fails',
  w.document.getElementById('refresh-tools').click();await tick();await tick();
  assert.match(w.document.getElementById('tools-list').textContent,/이전 목록을 표시합니다/);
  assert.match(w.document.getElementById('tools-list').textContent,/Keep me/);
+});
+test('tool refresh reloads MCP config and retries a transient list failure',async()=>{
+ let pluginCalls=0;
+ const {w,calls}=setup({'rpc':m=>{
+   if(m.args.method==='plugin/list') {
+     pluginCalls++;
+     if(pluginCalls===2) throw new Error('temporary app-server reset');
+     return {marketplaces:[{name:'local',plugins:[{name:'Recovered plugin',id:'recovered'}]}]};
+   }
+   if(m.args.method==='skills/list') return {data:[]};
+   if(m.args.method==='mcpServerStatus/list') return {data:[]};
+   return {};
+ }});await tick();
+ w.document.getElementById('show-tools').click();await tick();
+ w.document.getElementById('show-tools-panel').click();await tick();await tick();
+ w.document.getElementById('refresh-tools').click();
+ await new Promise(resolve=>setTimeout(resolve,180));await tick();await tick();
+ assert.ok(calls.some(c=>c.action==='rpc'&&c.args.method==='config/mcpServer/reload'));
+ const status=calls.find(c=>c.action==='rpc'&&c.args.method==='mcpServerStatus/list');
+ assert.equal(status.args.params.detail,'toolsAndAuthOnly');
+ assert.match(w.document.getElementById('tools-list').textContent,/Recovered plugin/);
+ assert.equal(pluginCalls,3);
+});
+test('RDC MCP card signs out the named MCP server without logging out the ChatGPT account',async()=>{
+ const {w,calls}=setup({
+  'rpc':m=>{
+   if(m.args.method==='plugin/list') return {marketplaces:[]};
+   if(m.args.method==='skills/list') return {data:[]};
+   if(m.args.method==='mcpServerStatus/list') return {data:[{name:'remote-desktop-commander',authStatus:'connected',runtimeStatus:{status:'ready'},tools:{screen:{}}}]};
+   return {};
+  },
+  'mcp.logout':m=>({ok:true,name:m.args.name})
+ });await tick();
+ w.document.getElementById('show-tools').click();await tick();
+ w.document.getElementById('show-tools-panel').click();await tick();await tick();
+ const card=[...w.document.querySelectorAll('[data-tools-panel="2"] .tool-card')].find(c=>c.textContent.includes('remote-desktop-commander'));
+ assert.ok(card);
+ const signOut=[...card.querySelectorAll('button')].find(b=>b.textContent==='로그아웃');
+ assert.ok(signOut);
+ signOut.click();await new Promise(resolve=>setTimeout(resolve,180));await tick();await tick();
+ assert.ok(calls.some(c=>c.action==='mcp.logout'&&c.args.name==='remote-desktop-commander'));
+ assert.equal(calls.some(c=>c.action==='auth.logout'||(c.action==='rpc'&&c.args.method==='account/logout')),false);
 });
 test('plugins, skills and MCP servers have separate tabs with counts and search',async()=>{
  const {w}=setup({'rpc':m=>{

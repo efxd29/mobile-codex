@@ -171,6 +171,18 @@ jobs:
         id: update
         if: github.event_name != 'pull_request' || env.PRIVATE_TEST_PR == 'true'
         run: python3 tools/prepare_update_release.py --apk "$PRODUCTION_APK" --build-tools "$ANDROID_HOME/build-tools/35.0.0" --identity app/build.gradle --previous-manifest artifacts/previous/mobile-codex-update.json --output artifacts/update
+      - name: Upload signed update artifact for efxd29
+        if: github.repository == 'efxd29/mobile-codex' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: mobile-codex-signed-update
+          path: |
+            artifacts/update/*.apk
+            artifacts/update/mobile-codex-update.json
+            artifacts/update/*.sha256
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 7
       - name: Collect corresponding tool sources on cache miss
         if: (github.event_name != 'pull_request' || env.PRIVATE_TEST_PR == 'true') && steps.sources.outputs.cache-hit != 'true'
         run: python3 tools/prepare_devtools_sources.py

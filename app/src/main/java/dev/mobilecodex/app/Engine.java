@@ -704,6 +704,7 @@ public final class Engine {
                         account = new JSONObject(); rateLimits = new JSONObject(); authState = "signed_out"; authError = "";
                         autoRestorePaused = true; publish(); reply.complete(obj("ok", true), null);
                     }
+                    case "mcp.logout" -> reply.complete(logoutMcpServer(args.getString("name")), null);
                     case "permissions.set" -> {
                         ensureEngineIdle();
                         String mode = args.getString("mode");
@@ -2908,6 +2909,25 @@ public final class Engine {
             if (current == null && observers.isEmpty()) approval.decision.complete(false);
             persist(); publish(); return;
         }
+    }
+    private JSONObject logoutMcpServer(String serverName) throws Exception {
+        ensureEngineIdle();
+        String name = serverName == null ? "" : serverName.trim();
+        if (name.isBlank() || name.length() > 128) throw new IOException(t("잘못된 MCP 서버 이름입니다."));
+        for (char value : name.toCharArray()) if (Character.isISOControl(value))
+            throw new IOException(t("잘못된 MCP 서버 이름입니다."));
+        File aliases = runtimeAliases();
+        ProcessBuilder builder = new ProcessBuilder(new File(aliases, "codex").getAbsolutePath(), "mcp", "logout", name)
+            .directory(codexHome.root()).redirectErrorStream(true);
+        devTools.configure(builder, codexHome.root(), aliases);
+        JSONObject result = DevTools.probe("MCP logout", builder);
+        if (!result.optBoolean("ok")) {
+            String output = result.optString("output", "").trim();
+            throw new IOException(output.isBlank() ? t("MCP 로그아웃에 실패했습니다.") : output);
+        }
+        // Drop app-server's in-memory OAuth state after the CLI removes the stored credentials.
+        stopCodex();
+        return obj("ok", true, "name", name, "output", result.optString("output", ""));
     }
     private File runtimeAliases() throws Exception {
         File bin = new File(context.getFilesDir(), "runtime-bin");
