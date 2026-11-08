@@ -21,16 +21,22 @@ final class AppLanguage {
         } catch (Exception failure) { android.util.Log.e("AppLanguage", "Unable to load bundled translations", failure); }
         configure(context);
     }
-    static String choice(Context context) { return context.getSharedPreferences("appearance", 0).getString("language", "system"); }
+    static String choice(Context context) {
+        String saved = context.getSharedPreferences("appearance", 0).getString("language", "system");
+        if ("ko".equals(saved)) return "en";
+        if (!Set.of("system", "en").contains(saved)) return "system";
+        if ("system".equals(saved) && context.getResources().getConfiguration().getLocales().get(0).getLanguage().equals("ko")) return "en";
+        return saved;
+    }
     static Locale locale(Context context) {
         String choice = choice(context);
         return choice.equals("system") ? context.getResources().getConfiguration().getLocales().get(0) : Locale.forLanguageTag(choice);
     }
-    static void configure(Context context) { Texts.configure(locale(context).getLanguage().equals("ko"), english); }
+    static void configure(Context context) { Texts.configure(false, english); }
     static JSONObject snapshot(Context context) { return obj("choice", choice(context), "systemLanguage", context.getResources().getConfiguration().getLocales().get(0).toLanguageTag()); }
     @android.annotation.SuppressLint("ApplySharedPref")
     static void set(Context context, String value) throws java.io.IOException {
-        if (!Set.of("system", "en", "ko").contains(value)) throw new IllegalArgumentException("Unsupported language");
+        if (!Set.of("system", "en").contains(value)) throw new IllegalArgumentException("Unsupported language");
         if (!context.getSharedPreferences("appearance", 0).edit().putString("language", value).commit()) throw new java.io.IOException("Unable to save language setting");
         configure(context);
         UsageWidgetProvider.updateAll(context);

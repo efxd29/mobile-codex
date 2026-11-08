@@ -3,35 +3,39 @@
   'use strict';
   function voicesFrom(result) {
     const catalog = result?.voices || {};
-    const supported = Array.isArray(catalog.v3) && catalog.v3.length ? catalog.v3 : catalog.v1 || [];
-    const ids = [...new Set(supported.filter(v => typeof v === 'string' && /^[a-z0-9_-]+$/i.test(v)))];
+    const clean = values => [...new Set((Array.isArray(values) ? values : [])
+      .filter(v => typeof v === 'string' && /^[a-z0-9_-]+$/i.test(v))
+      // Remove the Korean-only voices from the selectable list.
+      .filter(v => !['hanul', 'haetsal'].includes(v)))];
+    let ids = clean(Array.isArray(catalog.v3) && catalog.v3.length ? catalog.v3 : catalog.v1);
+    if (!ids.length) ids = clean(catalog.v1);
     return {ids, defaultVoice: ids.includes(catalog.defaultV1) ? catalog.defaultV1 : ids[0] || ''};
   }
   function voiceName(id) {
-    return {hanul:'한울', haetsal:'햇살'}[id] || id[0].toUpperCase() + id.slice(1);
+    return id.split(/[-_]+/).filter(Boolean).map(part => part[0].toUpperCase() + part.slice(1)).join(' ');
   }
   function voiceGroups(ids) {
-    // Only classify voices whose language group is confirmed in the ChatGPT picker.
     const known = [
-      ['한국어', ['hanul', 'haetsal']],
-      ['미국 영어', ['sol', 'ember', 'maple', 'bubbie', 'breeze', 'spruce', 'juniper', 'cove']],
-      ['독일어', ['miko']],
+      ['English', ['sol', 'ember', 'maple', 'bubbie', 'breeze', 'spruce', 'juniper', 'cove']],
+      ['German', ['miko']],
     ];
     const classified = new Set(known.flatMap(([, values]) => values));
     return [...known.map(([label, values]) => ({label, ids:values.filter(id => ids.includes(id))})),
-      {label:'기타', ids:ids.filter(id => !classified.has(id))}].filter(group => group.ids.length);
+      {label:'Other', ids:ids.filter(id => !classified.has(id))}].filter(group => group.ids.length);
   }
   function create({call, getState, getOptions, show, close, t, errorText, changed}) {
     const $ = id => document.getElementById(id);
     let current = null, voices = [], loading = false, settings = false;
     let dismissedKey = '', restoringKey = '';
-    let voice = localStorage.getItem('live-voice') || '', language = localStorage.getItem('live-language') || 'auto';
+    let reconnectAttempts = 0, reconnectTimer = null;
+    let voice = localStorage.getItem('live-voice') || '', language = localStorage.getItem('live-language') === 'en' ? 'en' : 'auto';
     const active = () => !!current;
     const status = text => { $('live-status').textContent = t(text); };
     function update() {
       const state = getState();
       $('live-task').hidden = !state.busy || !state.turnId;
-      $('live-start').disabled = loading || !!current || !!state.busy || !!state.proBusy || !state.account?.type;
+      const savedLogin = (state.accounts || []).some(profile => profile.active && !profile.needsLogin);
+      $('live-start').disabled = loading || !!current || !!state.busy || !!state.proBusy || (!state.account?.type && !savedLogin);
       $('live-mute').disabled = !current?.connected;
       $('live-text-send').disabled = !current?.connected || !!current?.sending || !$('live-text').value.trim();
       $('live-mute').setAttribute('aria-pressed', String(!!current?.muted));
@@ -73,13 +77,13 @@
         })];
       }));
       syncVoiceChoice();
-      $('live-language').value = ['auto','ko','en'].includes(language) ? language : 'auto';
+      $('live-language').value = ['auto','en'].includes(language) ? language : 'auto';
     }
     function release(session) {
       cancelAnimationFrame(session.frame);
       $('live-orb').style.transform = '';
     }
-    async function end({hide = true, message = ''} = {}) {
+    async function end({hide = true, message = '', retryable = false} = {}) {
       const previous = current; current = null;
       if (previous) {
         dismissedKey = previous.key;
@@ -89,17 +93,36 @@
       }
       if (current) return;
       if (hide) close('live-dialog');
-      else { status(message || '음성 대화가 종료되었습니다.'); $('live-retry').hidden = false; }
+      else if (retryable && reconnectAttempts < 2) {
+        reconnectAttempts++;
+        status('Connection lost. Reconnecting…');
+        $('live-retry').hidden = true;
+        clearTimeout(reconnectTimer);
+        reconnectTimer = setTimeout(() => {
+          reconnectTimer = null;
+          if (!current && $('live-dialog').open) start().catch(error => status(errorText(error)));
+        }, reconnectAttempts === 1 ? 700 : 1600);
+      } else {
+        status(message || 'Voice conversation ended.');
+        $('live-retry').hidden = false;
+      }
       update(); changed();
     }
     function fail(session, error) {
       if (current !== session) return;
-      end({hide:false, message:errorText(error, t('음성 연결에 실패했습니다. 다시 연결해 주세요.'))});
+      const raw = String(error?.message ?? error ?? '');
+      const retryable = raw.startsWith('LIVE_RETRYABLE:');
+      const message = retryable ? raw.slice('LIVE_RETRYABLE:'.length) : raw;
+      end({hide:false, message:errorText(message, t('Voice connection failed.')), retryable});
     }
     function applyNativeState(data) {
       if (!data?.key || data.key === dismissedKey || (current && current.key !== data.key)) return;
       if (data.phase === 'ended') {
-        if (current?.key === data.key) end({hide:false, message:data.error || '음성 대화가 종료되었습니다.'});
+        if (current?.key === data.key) end({
+          hide:false,
+          message:data.error || 'Voice connection ended.',
+          retryable:data.retryable === true
+        });
         return;
       }
       if (!current) {
@@ -108,6 +131,7 @@
         if (!document.hidden) animate(current);
       }
       current.connected = !!data.connected; current.muted = !!data.muted;
+      if (current.connected) reconnectAttempts = 0;
       current.input = Number(data.input) || 0; current.output = Number(data.output) || 0;
       if (data.threadId) current.localThread = data.threadId;
       if (data.userCaption !== undefined) $('live-caption-user').textContent = data.userCaption;
@@ -127,6 +151,7 @@
     }
     async function start() {
       if (current || loading) return;
+      clearTimeout(reconnectTimer); reconnectTimer = null;
       loading = true; setSettings(false); show('live-dialog'); status('연결 중…');
       $('live-caption-user').textContent = ''; $('live-caption-assistant').textContent = '';
       const session = {key:crypto.randomUUID(), scale:1, velocity:0, muted:false, connected:false};
@@ -162,7 +187,7 @@
     // Avoid moving the compact composer button between pointer-down and click.
     $('live-start').addEventListener('pointerdown', e => e.preventDefault());
     $('live-start').addEventListener('click', start);
-    $('live-retry').addEventListener('click', start);
+    $('live-retry').addEventListener('click', () => { reconnectAttempts = 0; start(); });
     $('live-end').addEventListener('click', () => end());
     $('live-task-stop').addEventListener('click', () => call('chat.stop').catch(error => status(errorText(error))));
     $('live-mute').addEventListener('click', async () => {
@@ -194,7 +219,10 @@
       localStorage.setItem('live-voice', voice); localStorage.setItem('live-language', language);
       if (restart) { await end({hide:false}); await start(); } else setSettings(false);
     });
-    $('live-dialog').addEventListener('close', () => { if (current && !$('live-dialog').open) end(); });
+    $('live-dialog').addEventListener('close', () => {
+      clearTimeout(reconnectTimer); reconnectTimer = null;
+      if (current && !$('live-dialog').open) end();
+    });
     // Hiding this page has no effect on native capture, playback, or connection timers.
     document.addEventListener('visibilitychange', () => {
       if (!current) return;

@@ -47,7 +47,7 @@ public class LiveSessionTest {
         engine.handle(action,params,(r,e)->{if(e==null)result.complete(r);else result.completeExceptionally(e);});
         return result.get(5,TimeUnit.SECONDS);
     }
-    JSONObject args(String key){return obj("key",key,"sdp","v=0\r\n","voice","cove","language","ko","model","selected-model","effort","high");}
+    JSONObject args(String key){return obj("key",key,"sdp","v=0\r\n","voice","cove","language","en","model","selected-model","effort","high");}
     JSONObject params(String method){return calls.stream().filter(c->method.equals(c.optString("method"))).reduce((a,b)->b).orElseThrow().optJSONObject("params");}
     void notice(String method,JSONObject p)throws Exception {
         Method m=Engine.class.getDeclaredMethod("onNotification",String.class,JSONObject.class);m.setAccessible(true);
@@ -62,8 +62,18 @@ public class LiveSessionTest {
         assertEquals("workspace-write",thread.getString("sandbox"));
         assertEquals("v3",live.getString("version"));assertEquals("webrtc",live.getJSONObject("transport").getString("type"));
         assertFalse(live.has("model"));assertFalse(live.getBoolean("clientManagedHandoffs"));
-        assertTrue(live.getString("prompt").contains("Korean"));
+        assertTrue(live.getString("prompt").contains("Speak English"));
+        assertFalse(live.getString("prompt").contains("Korean"));
         assertTrue(thread.getJSONArray("dynamicTools").length()>0);
+    }
+    @Test public void reconnectCreatesANewLiveSessionOnTheExistingConversation()throws Exception{
+        call("live.start",args("one"));
+        call("live.stop",obj("key","one"));
+        call("live.start",args("two"));
+        assertEquals(2,calls.stream().filter(c->c.optString("method").equals("thread/realtime/start")).count());
+        assertEquals("remote-live",params("thread/realtime/start").getString("threadId"));
+        assertFalse(calls.stream().anyMatch(c->c.optString("method").equals("turn/start")));
+        assertEquals("two",call("state",obj()).getJSONObject("live").getString("key"));
     }
     @Test public void stoppingVoiceDoesNotInterruptTaskAndStaleStopsCannotEndReplacement()throws Exception {
         call("live.start",args("one"));call("live.stop",obj("key","one"));
@@ -76,12 +86,12 @@ public class LiveSessionTest {
         fails("live.start",args("one").put("voice","invented-voice"));
         assertFalse(calls.stream().anyMatch(c->c.optString("method").equals("thread/start")));
     }
-    @Test public void newVoiceIsAcceptedFromV3Catalog()throws Exception {
-        voiceCatalog.put("v3",array("cove","hanul","haetsal"));
-        call("live.start",args("one").put("voice","hanul"));
-        assertEquals("hanul",params("thread/realtime/start").getString("voice"));
+    @Test public void supportedAdditionalVoiceIsAcceptedFromV3Catalog()throws Exception {
+        voiceCatalog.put("v3",array("cove","miko","haetsal"));
+        call("live.start",args("one").put("voice","miko"));
+        assertEquals("miko",params("thread/realtime/start").getString("voice"));
     }
-    @Test public void v1OnlyVoiceIsRejectedWhenV3CatalogIsPresent()throws Exception {
+    @Test public void voiceMissingFromV3CatalogIsRejectedWhenV3CatalogIsPresent()throws Exception {
         voiceCatalog.put("v3",array("cove","hanul","haetsal"));
         fails("live.start",args("one").put("voice","sol"));
         assertFalse(calls.stream().anyMatch(c->c.optString("method").equals("thread/start")));

@@ -75,10 +75,28 @@ public class NativeLiveServiceTest {
         try {
             var service=controller.get(); var rtc=new Rtc(); service.transport=()->rtc; service.backend=(a,p,r)->{};
             service.begin("one",()->{}); AtomicInteger replies=new AtomicInteger();
-            service.connect(obj("key","one"),(r,e)->{assertNotNull(e);replies.incrementAndGet();});
+            service.connect(obj("key","one"),(r,e)->{
+                assertNotNull(e); assertTrue(e.getMessage().startsWith("LIVE_RETRYABLE:")); replies.incrementAndGet();
+            });
             shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(46));
             assertEquals(1,replies.get()); assertTrue(rtc.closed); assertNull(LiveAudioService.active());
             assertEquals(AudioManager.MODE_NORMAL,service.getSystemService(AudioManager.class).getMode());
+        } finally { controller.destroy(); }
+    }
+    @Test public void recoverableNetworkFailureStopsTheOldPeerAndReleasesTheSession() {
+        var controller=Robolectric.buildService(LiveAudioService.class).create();
+        try {
+            var service=controller.get(); var rtc=new Rtc(); List<String> calls=new ArrayList<>();
+            service.transport=()->rtc;
+            service.backend=(action,args,reply)->{ calls.add(action); reply.complete(obj("threadId","thread"),null); };
+            service.begin("one",()->{});
+            service.connect(obj("key","one"),(result,error)->assertNull(error));
+            rtc.listener.offer("offer"); idle();
+            rtc.listener.connection("connected"); idle();
+            assertEquals("connected",service.snapshot().getString("phase"));
+            rtc.listener.recoverableError("network lost"); idle();
+            assertTrue(rtc.closed); assertEquals("",service.snapshot().getString("key"));
+            assertEquals(List.of("live.start","live.stop"),calls);
         } finally { controller.destroy(); }
     }
     @Test public void oldTransportCannotAffectReplacementSession() {

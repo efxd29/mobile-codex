@@ -7,6 +7,7 @@ interface LiveRtc {
         void connection(String state);
         void levels(double input, double output, long recorded, long played);
         void error(String message);
+        default void recoverableError(String message) { error(message); }
     }
     void start(Listener listener);
     void answer(String sdp);

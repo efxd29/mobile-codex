@@ -404,6 +404,32 @@ test('plugin, skill, MCP screens query real protocol routes',async()=>{
  const {w,calls}=setup();await tick();w.document.getElementById('show-tools').click();await tick();w.document.getElementById('show-tools-panel').click();await tick();await tick();
  const routes=calls.filter(m=>m.action==='rpc').map(m=>m.args.method);
  assert.deepEqual(routes,['plugin/list','skills/list','mcpServerStatus/list']);
+ const status=calls.find(m=>m.action==='rpc'&&m.args.method==='mcpServerStatus/list');
+ assert.equal(Object.hasOwn(status.args.params,'threadId'),false);
+});
+test('opening tools survives the account restoring while global MCP lists are loading',async()=>{
+ let release;
+ const pending=new Promise(resolve=>{release=resolve;});
+ const {w,snapshot}=setup({'rpc':m=>pending.then(()=>{
+   if(m.args.method==='plugin/list')return {marketplaces:[{name:'local',plugins:[{name:'Restored plugin',id:'restored'}]}]};
+   if(m.args.method==='skills/list')return {data:[{skills:[{name:'restored-skill',path:'/skills/restored',enabled:true}]}]};
+   if(m.args.method==='mcpServerStatus/list')return {data:[{name:'dc',tools:{},runtimeStatus:{status:'ready'}}]};
+   return {};
+ })});
+ await tick();
+ const initial={...snapshot,account:{},authState:'unknown',accounts:[{active:true,needsLogin:false}]};
+ w.mobileCodexEvent('state',initial);await tick();
+ w.document.getElementById('show-tools').click();await tick();
+ w.document.getElementById('show-tools-panel').click();await tick();
+ const status=()=>w.document.getElementById('tools-list').textContent;
+ assert.match(status(),/Loading|불러오는 중/);
+ w.mobileCodexEvent('state',{...initial,account:{type:'chatgpt',email:'me@example.test'},authState:'signed_in'});await tick();
+ release();
+ await tick();await tick();await tick();
+ assert.match(status(),/Restored plugin/);
+ assert.match(status(),/restored-skill/);
+ assert.match(status(),/dc/);
+ assert.doesNotMatch(status(),/Loading/);
 });
 test('tool refresh keeps a prior category list when one protocol request fails',async()=>{
  let pluginCalls=0;
@@ -440,24 +466,24 @@ test('tool refresh reloads MCP config and retries a transient list failure',asyn
  assert.match(w.document.getElementById('tools-list').textContent,/Recovered plugin/);
  assert.equal(pluginCalls,3);
 });
-test('RDC MCP card signs out the named MCP server without logging out the ChatGPT account',async()=>{
+test('RDC alias dc exposes sign out without logging out the ChatGPT account',async()=>{
  const {w,calls}=setup({
   'rpc':m=>{
    if(m.args.method==='plugin/list') return {marketplaces:[]};
    if(m.args.method==='skills/list') return {data:[]};
-   if(m.args.method==='mcpServerStatus/list') return {data:[{name:'remote-desktop-commander',authStatus:'connected',runtimeStatus:{status:'ready'},tools:{screen:{}}}]};
+   if(m.args.method==='mcpServerStatus/list') return {data:[{name:'dc',authStatus:'connected',runtimeStatus:{status:'ready'},tools:{screen:{}}}]};
    return {};
   },
   'mcp.logout':m=>({ok:true,name:m.args.name})
  });await tick();
  w.document.getElementById('show-tools').click();await tick();
  w.document.getElementById('show-tools-panel').click();await tick();await tick();
- const card=[...w.document.querySelectorAll('[data-tools-panel="2"] .tool-card')].find(c=>c.textContent.includes('remote-desktop-commander'));
+ const card=[...w.document.querySelectorAll('[data-tools-panel="2"] .tool-card')].find(c=>c.textContent.includes('dc'));
  assert.ok(card);
- const signOut=[...card.querySelectorAll('button')].find(b=>b.textContent==='로그아웃');
+ const signOut=[...card.querySelectorAll('button')].find(b=>b.textContent==='Sign out');
  assert.ok(signOut);
  signOut.click();await new Promise(resolve=>setTimeout(resolve,180));await tick();await tick();
- assert.ok(calls.some(c=>c.action==='mcp.logout'&&c.args.name==='remote-desktop-commander'));
+ assert.ok(calls.some(c=>c.action==='mcp.logout'&&c.args.name==='dc'));
  assert.equal(calls.some(c=>c.action==='auth.logout'||(c.action==='rpc'&&c.args.method==='account/logout')),false);
 });
 test('plugins, skills and MCP servers have separate tabs with counts and search',async()=>{
@@ -752,6 +778,20 @@ test('opening the model picker refreshes available models without waiting to sho
  assert.equal(d.querySelector('#model-list input[value="gpt-6-astra"]').checked,true);
  assert.equal(d.getElementById('model-refresh-status').hidden,true);
  assert.equal(calls.some(c=>c.action==='runtime.stop'||c.action==='runtime.start'),false);
+});
+
+test('Fast toggle is active and sends Fast mode for a model that advertises the priority tier',async()=>{
+ const {w,calls,snapshot}=setup({}, {mobile:true});await tick();
+ w.mobileCodexEvent('state',{...snapshot,models:[fastModel]});
+ const d=w.document,control=d.getElementById('fast-mode');
+ assert.equal(control.disabled,false);
+ control.click();await tick();
+ assert.equal(control.getAttribute('aria-pressed'),'true');
+ d.getElementById('prompt').value='Verify Fast mode';
+ d.getElementById('composer').dispatchEvent(new w.Event('submit',{cancelable:true}));await tick();
+ const request=calls.find(c=>c.action==='chat.send');
+ assert.ok(request);
+ assert.equal(request.args.fastMode,true);
 });
 test('model picker sends actual catalog values and reselecting the active model returns to reasoning',async()=>{
  const {w,snapshot,calls}=setup({}, {mobile:true});await tick();const d=w.document;
@@ -1514,24 +1554,27 @@ test('edited update source disables old candidate actions and download names its
  assert.equal(w.document.getElementById('update-check').disabled,false);
 });
 
-test('language switch preserves drafts, model content and editor values',async()=>{
- const {w,snapshot,calls}=setup({}, {language:'ko'});await tick();const d=w.document;
+test('English-only UI excludes the Korean choice and preserves drafts or content',async()=>{
+ const {w,snapshot,calls}=setup({}, {language:'en',systemLanguage:'ko-KR'});await tick();const d=w.document;
  const raw='설정 파일 보내기';w.mobileCodexEvent('state',{...snapshot,messages:[{id:'a',role:'assistant',text:raw}]});
  d.getElementById('prompt').value='기존 초안';d.getElementById('prompt').dispatchEvent(new w.Event('input'));
  d.getElementById('editor').value='사용자 파일';d.getElementById('instructions-editor').value='기존 지침';
+ assert.equal(d.documentElement.lang,'en');
+ assert.match(d.getElementById('settings').textContent,/Settings/);
+ assert.equal([...d.getElementById('language').options].some(option=>option.value==='ko'),false);
  d.getElementById('language').value='en';d.getElementById('language').dispatchEvent(new w.Event('change'));await tick();await tick();
- assert.equal(d.documentElement.lang,'en');assert.match(d.getElementById('settings').textContent,/Settings/);
+ assert.equal(d.documentElement.lang,'en');
  assert.equal(d.getElementById('prompt').value,'기존 초안');assert.equal(d.getElementById('editor').value,'사용자 파일');assert.equal(d.getElementById('instructions-editor').value,'기존 지침');
  w.mobileCodexEvent('state',{...snapshot,messages:[{id:'a',role:'assistant',text:raw}]});
  assert.match(d.getElementById('messages').textContent,/설정 파일 보내기/);assert.match(d.getElementById('messages').textContent,/Copy/);
  assert.match(d.querySelector('[data-prompt]').dataset.prompt,/Look through/);
  assert.equal(calls.filter(x=>['runtime.stop','runtime.start'].includes(x.action)).length,0);
- d.getElementById('language').value='ko';d.getElementById('language').dispatchEvent(new w.Event('change'));await tick();await tick();
- assert.equal(d.getElementById('prompt').value,'기존 초안');assert.match(d.getElementById('settings').textContent,/설정/);
 });
-test('system locale defaults to English outside Korean and catalog copies match',async()=>{
- const {w}=setup({}, {language:'system',systemLanguage:'ja-JP'});await tick();
- assert.equal(w.document.documentElement.lang,'en');assert.match(w.document.getElementById('prompt').placeholder,/Ask Codex/);
+test('a Korean system locale remains English in System language mode',async()=>{
+ const {w}=setup({}, {language:'system',systemLanguage:'ko-KR'});await tick();
+ assert.equal(w.document.documentElement.lang,'en');
+ assert.match(w.document.getElementById('prompt').placeholder,/Ask Codex/);
+ assert.equal(w.MobileCodexLocale.language(),'en');
  assert.deepEqual(JSON.parse(JSON.stringify(w.MobileCodexEnglish)), JSON.parse(fs.readFileSync('app/src/main/assets/translations-en.json','utf8')));
 });
 test('inline dictation displays partial text, supports done and cancel, and cannot auto-send',async()=>{
