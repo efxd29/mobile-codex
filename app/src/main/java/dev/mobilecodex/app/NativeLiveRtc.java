@@ -77,7 +77,12 @@ final class NativeLiveRtc implements LiveRtc {
                     public void onWebRtcAudioRecordError(String message) { run(() -> fail("마이크 연결이 종료되었습니다.")); }
                 }).createAudioDeviceModule();
             factory = PeerConnectionFactory.builder().setAudioDeviceModule(audio).createPeerConnectionFactory();
-            PeerConnection.RTCConfiguration config = new PeerConnection.RTCConfiguration(List.of());
+            // Android's native WebRTC stack does not inherit the browser's ICE defaults.
+            // A public STUN server lets mobile clients discover a server-reflexive candidate
+            // when the phone is behind carrier/Wi-Fi NAT. This is only for ICE discovery;
+            // audio remains end-to-end on the negotiated WebRTC peer connection.
+            PeerConnection.IceServer stun = PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer();
+            PeerConnection.RTCConfiguration config = new PeerConnection.RTCConfiguration(List.of(stun));
             config.sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN;
             peer = factory.createPeerConnection(config, new PeerConnection.Observer() {
                 public void onSignalingChange(PeerConnection.SignalingState state) {}
