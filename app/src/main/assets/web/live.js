@@ -34,7 +34,8 @@
     function update() {
       const state = getState();
       $('live-task').hidden = !state.busy || !state.turnId;
-      $('live-start').disabled = loading || !!current || !!state.busy || !!state.proBusy || !state.account?.type;
+      const savedLogin = (state.accounts || []).some(profile => profile.active && !profile.needsLogin);
+      $('live-start').disabled = loading || !!current || !!state.busy || !!state.proBusy || (!state.account?.type && !savedLogin);
       $('live-mute').disabled = !current?.connected;
       $('live-text-send').disabled = !current?.connected || !!current?.sending || !$('live-text').value.trim();
       $('live-mute').setAttribute('aria-pressed', String(!!current?.muted));
