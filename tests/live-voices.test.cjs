@@ -86,7 +86,7 @@ test('Live retries a recoverable network disconnect with a new session key and n
     assert.notEqual(starts[1].args.key,starts[0].args.key);
     assert.equal(calls.some(item=>item.action==='live.text'||item.action==='chat.send'),false);
     assert.equal(ui.active(),true);
-  } finally { ui.end(); dom.window.close(); }
+  } finally { await ui.end(); dom.window.close(); }
 });
 
 test('Live does not auto-retry protocol or entitlement errors', async()=>{
@@ -99,5 +99,5 @@ test('Live does not auto-retry protocol or entitlement errors', async()=>{
     await wait(1800);
     assert.equal(calls.filter(item=>item.action==='live.start').length,1);
     assert.equal(ui.active(),false);
-  } finally { ui.end(); dom.window.close(); }
+  } finally { await ui.end(); dom.window.close(); }
 });
