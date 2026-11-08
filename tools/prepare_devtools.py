@@ -446,7 +446,9 @@ def safe_tar_members(archive: tarfile.TarFile) -> Iterable[tarfile.TarInfo]:
             link = member.linkname.replace("\\", "/")
             resolved = posixpath.normpath(posixpath.join(posixpath.dirname(normalized), link))
             if link.startswith("/") or resolved.startswith("../"):
-                raise PackagingError(f"unsafe tar symlink: {member.name!r}")
+                raise PackagingError(
+                    f"unsafe tar symlink: {member.name!r} -> {member.linkname!r} (resolved: {resolved!r})"
+                )
         elif not (member.isfile() or member.isdir()):
             raise PackagingError(f"unsupported tar member type: {member.name!r}")
         yield member
