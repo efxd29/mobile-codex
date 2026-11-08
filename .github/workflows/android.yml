@@ -115,7 +115,6 @@ jobs:
         run: python3 tools/prepare_devtools.py --write-lock
       - name: Save refreshed Termux devtools package lock
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        continue-on-error: true
         with:
           name: mobile-codex-devtools-lock
           path: tools/devtools-lock.json
