@@ -24,6 +24,14 @@
     const $ = id => document.getElementById(id);
     let current = null, voices = [], loading = false, settings = false;
     let dismissedKey = '', restoringKey = '';
+    const reconnectDelayMs = 5000, maxAutomaticReconnects = 1;
+    function cancelReconnect(session) {
+      if (session?.reconnectTimer) clearTimeout(session.reconnectTimer);
+      if (session) session.reconnectTimer = null;
+    }
+    function recoverableError(error) {
+      return /(?:connection|disconnect|network|timeout|timed out|temporar|interrupted|playback|ice\\b|reconnect)/i.test(String(error || ''));
+    }
     let voice = localStorage.getItem('live-voice') || '', language = localStorage.getItem('live-language') || 'en';
     if (language !== 'en') language = 'en';
     const active = () => !!current;
@@ -82,6 +90,7 @@
     async function end({hide = true, message = ''} = {}) {
       const previous = current; current = null;
       if (previous) {
+        cancelReconnect(previous);
         dismissedKey = previous.key;
         release(previous);
         // A stale stop is keyed and cannot terminate a replacement session.
@@ -96,19 +105,52 @@
       if (current !== session) return;
       end({hide:false, message:errorText(error, t('음성 연결에 실패했습니다. 다시 연결해 주세요.'))});
     }
+    async function reconnect(session, message = 'Connection lost. Tap Retry to reconnect.') {
+      if (current !== session) return;
+      cancelReconnect(session);
+      if (!session.started || loading || session.reconnectAttempts >= maxAutomaticReconnects) {
+        await end({hide:false, message});
+        return;
+      }
+      const context = {reconnectAttempts:session.reconnectAttempts + 1, preserveTranscript:true};
+      status('Reconnecting…');
+      await end({hide:false, message:'Reconnecting…'});
+      await start(context);
+    }
+    function scheduleReconnect(session, message = 'Connection lost. Tap Retry to reconnect.') {
+      if (current !== session || !session.started) return;
+      if (session.reconnectAttempts >= maxAutomaticReconnects) {
+        void end({hide:false, message});
+        return;
+      }
+      if (session.reconnectTimer) return;
+      status('Reconnecting…');
+      session.reconnectTimer = setTimeout(() => {
+        if (current !== session || session.connected) return;
+        void reconnect(session, message);
+      }, reconnectDelayMs);
+    }
     function applyNativeState(data) {
       if (!data?.key || data.key === dismissedKey || (current && current.key !== data.key)) return;
       if (data.phase === 'ended') {
-        if (current?.key === data.key) end({hide:false, message:data.error || '음성 대화가 종료되었습니다.'});
+        if (current?.key === data.key) {
+          if (current.started && data.error && recoverableError(data.error))
+            void reconnect(current, 'Voice connection lost. Tap Retry to reconnect.');
+          else end({hide:false, message:data.error || 'Voice call ended.'});
+        }
         return;
       }
       if (!current) {
         if (getState().live?.key !== data.key) return;
-        current = {key:data.key, scale:1, velocity:0}; show('live-dialog'); setSettings(false);
+        current = {key:data.key, scale:1, velocity:0, started:true, reconnectAttempts:0};
+        show('live-dialog'); setSettings(false);
         if (!document.hidden) animate(current);
       }
       current.connected = !!data.connected; current.muted = !!data.muted;
       current.input = Number(data.input) || 0; current.output = Number(data.output) || 0;
+      if (data.phase === 'connected') cancelReconnect(current);
+      else if (data.phase === 'failed') { void reconnect(current, 'Voice connection failed. Tap Retry to reconnect.'); return; }
+      else if (data.phase === 'disconnected') scheduleReconnect(current);
       if (data.threadId) current.localThread = data.threadId;
       if (data.userCaption !== undefined) $('live-caption-user').textContent = data.userCaption;
       if (data.assistantCaption !== undefined) $('live-caption-assistant').textContent = data.assistantCaption;
@@ -125,11 +167,16 @@
       $('live-orb').dataset.speaker = output > .05 ? 'assistant' : input > .05 ? 'user' : 'idle';
       session.frame = requestAnimationFrame(() => animate(session));
     }
-    async function start() {
+    async function start(reconnectContext = null) {
       if (current || loading) return;
-      loading = true; setSettings(false); show('live-dialog'); status('연결 중…');
-      $('live-caption-user').textContent = ''; $('live-caption-assistant').textContent = '';
-      const session = {key:crypto.randomUUID(), scale:1, velocity:0, muted:false, connected:false};
+      loading = true; setSettings(false); show('live-dialog'); status(reconnectContext ? 'Reconnecting…' : '연결 중…');
+      if (!reconnectContext?.preserveTranscript) {
+        $('live-caption-user').textContent = ''; $('live-caption-assistant').textContent = '';
+      }
+      const session = {
+        key:crypto.randomUUID(), scale:1, velocity:0, muted:false, connected:false,
+        started:false, reconnectAttempts:reconnectContext?.reconnectAttempts || 0, reconnectTimer:null
+      };
       current = session; update(); changed();
       const state = getState(), expectedThreadId = state.threadId || '', workspaceKey = state.workspace?.key || '', options = getOptions();
       try {
@@ -138,22 +185,31 @@
         animate(session);
         const result = await call('live.start', {...options, key:session.key, voice, language, expectedThreadId, workspaceKey});
         if (current !== session) { await call('live.stop', {key:session.key}); return; }
-        session.localThread = result.threadId; applyNativeState(result);
+        session.localThread = result.threadId; session.started = true; applyNativeState(result);
       } catch (error) { fail(session, error); }
       finally { loading = false; update(); }
     }
     async function event(name, data) {
       if (name === 'live.audio') { applyNativeState(data); return; }
       if (name === 'live.interrupted') {
-        if (!data?.key || data.key === current?.key) await end({hide:false, message:'음성 대화가 중단되었습니다.'});
+        const session = current;
+        if ((!data?.key || data.key === session?.key) && session) {
+          if (session.started) await reconnect(session, 'Voice call was interrupted. Tap Retry to reconnect.');
+          else await end({hide:false, message:'Voice call was interrupted.'});
+        }
         return;
       }
       if (name !== 'live.event') return;
       const session = current;
       if (!session || session.key !== data.key) return;
       const params = data.params || {};
-      if (data.method === 'thread/realtime/error') fail(session, new Error(params.message));
-      else if (data.method === 'thread/realtime/closed') end({hide:false, message:'음성 대화가 종료되었습니다.'});
+      if (data.method === 'thread/realtime/error') {
+        if (session.started && recoverableError(params.message))
+          void reconnect(session, 'Voice connection lost. Tap Retry to reconnect.');
+        else fail(session, new Error(params.message));
+      }
+      else if (data.method === 'thread/realtime/closed')
+        void reconnect(session, 'Voice call ended. Tap Retry to reconnect.');
       else if (data.method === 'thread/realtime/transcript/delta' || data.method === 'thread/realtime/transcript/done') {
         const role = params.role === 'user' ? 'user' : 'assistant', element = $('live-caption-' + role);
         element.textContent = (data.method.endsWith('/done') ? params.text || '' : element.textContent + (params.delta || '')).slice(-1600);
