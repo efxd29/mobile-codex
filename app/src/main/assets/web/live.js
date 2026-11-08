@@ -3,29 +3,31 @@
   'use strict';
   function voicesFrom(result) {
     const catalog = result?.voices || {};
-    const supported = Array.isArray(catalog.v3) && catalog.v3.length ? catalog.v3 : catalog.v1 || [];
-    const ids = [...new Set(supported.filter(v => typeof v === 'string' && /^[a-z0-9_-]+$/i.test(v)))];
+    const clean = values => [...new Set((Array.isArray(values) ? values : [])
+      .filter(v => typeof v === 'string' && /^[a-z0-9_-]+$/i.test(v))
+      // Remove the Korean-only voices from the selectable list.
+      .filter(v => !['hanul', 'haetsal'].includes(v)))];
+    let ids = clean(Array.isArray(catalog.v3) && catalog.v3.length ? catalog.v3 : catalog.v1);
+    if (!ids.length) ids = clean(catalog.v1);
     return {ids, defaultVoice: ids.includes(catalog.defaultV1) ? catalog.defaultV1 : ids[0] || ''};
   }
   function voiceName(id) {
-    return {hanul:'한울', haetsal:'햇살'}[id] || id[0].toUpperCase() + id.slice(1);
+    return id.split(/[-_]+/).filter(Boolean).map(part => part[0].toUpperCase() + part.slice(1)).join(' ');
   }
   function voiceGroups(ids) {
-    // Only classify voices whose language group is confirmed in the ChatGPT picker.
     const known = [
-      ['한국어', ['hanul', 'haetsal']],
-      ['미국 영어', ['sol', 'ember', 'maple', 'bubbie', 'breeze', 'spruce', 'juniper', 'cove']],
-      ['독일어', ['miko']],
+      ['English', ['sol', 'ember', 'maple', 'bubbie', 'breeze', 'spruce', 'juniper', 'cove']],
+      ['German', ['miko']],
     ];
     const classified = new Set(known.flatMap(([, values]) => values));
     return [...known.map(([label, values]) => ({label, ids:values.filter(id => ids.includes(id))})),
-      {label:'기타', ids:ids.filter(id => !classified.has(id))}].filter(group => group.ids.length);
+      {label:'Other', ids:ids.filter(id => !classified.has(id))}].filter(group => group.ids.length);
   }
   function create({call, getState, getOptions, show, close, t, errorText, changed}) {
     const $ = id => document.getElementById(id);
     let current = null, voices = [], loading = false, settings = false;
     let dismissedKey = '', restoringKey = '';
-    let voice = localStorage.getItem('live-voice') || '', language = localStorage.getItem('live-language') || 'auto';
+    let voice = localStorage.getItem('live-voice') || '', language = localStorage.getItem('live-language') === 'en' ? 'en' : 'auto';
     const active = () => !!current;
     const status = text => { $('live-status').textContent = t(text); };
     function update() {
@@ -73,7 +75,7 @@
         })];
       }));
       syncVoiceChoice();
-      $('live-language').value = ['auto','ko','en'].includes(language) ? language : 'auto';
+      $('live-language').value = ['auto','en'].includes(language) ? language : 'auto';
     }
     function release(session) {
       cancelAnimationFrame(session.frame);
