@@ -31,7 +31,7 @@ async function fixture(){
     }
     if(action==='live.text')return reply();
     if(action==='live.start'){
-      const state={key:args.key,threadId:fx.state.threadId,phase:'connected',connected:true,muted:false,input:.2,output:.4};
+      const state={key:args.key,threadId:fx.state.threadId,phase:'connected',connected:true,muted:false,input:.2,output:.4,userCaption:'',assistantCaption:''};
       fx.peers.push({pc:{connectionState:'connected'},state,key:args.key});
       reply(state);emit('live.audio',state);
     }
