@@ -407,6 +407,30 @@ test('plugin, skill, MCP screens query real protocol routes',async()=>{
  const status=calls.find(m=>m.action==='rpc'&&m.args.method==='mcpServerStatus/list');
  assert.equal(Object.hasOwn(status.args.params,'threadId'),false);
 });
+test('opening tools survives the account restoring while global MCP lists are loading',async()=>{
+ let release;
+ const pending=new Promise(resolve=>{release=resolve;});
+ const {w}=setup({'rpc':m=>pending.then(()=>{
+   if(m.args.method==='plugin/list')return {marketplaces:[{name:'local',plugins:[{name:'Restored plugin',id:'restored'}]}]};
+   if(m.args.method==='skills/list')return {data:[{skills:[{name:'restored-skill',path:'/skills/restored',enabled:true}]}]};
+   if(m.args.method==='mcpServerStatus/list')return {data:[{name:'dc',tools:{},runtimeStatus:{status:'ready'}}]};
+   return {};
+ })});
+ await tick();
+ const initial={...w.snapshot,account:{},authState:'unknown',accounts:[{active:true,needsLogin:false}]};
+ w.mobileCodexEvent('state',initial);await tick();
+ w.document.getElementById('show-tools').click();await tick();
+ w.document.getElementById('show-tools-panel').click();await tick();
+ const status=()=>w.document.getElementById('tools-list').textContent;
+ assert.match(status(),/Loading/);
+ w.mobileCodexEvent('state',{...initial,account:{type:'chatgpt',email:'me@example.test'},authState:'signed_in'});await tick();
+ release();
+ await tick();await tick();await tick();
+ assert.match(status(),/Restored plugin/);
+ assert.match(status(),/restored-skill/);
+ assert.match(status(),/dc/);
+ assert.doesNotMatch(status(),/Loading/);
+});
 test('tool refresh keeps a prior category list when one protocol request fails',async()=>{
  let pluginCalls=0;
  const {w}=setup({'rpc':m=>{
