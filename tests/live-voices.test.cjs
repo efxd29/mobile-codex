@@ -2,40 +2,34 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {voicesFrom, voiceName, voiceGroups} = require('../app/src/main/assets/web/live.js');
 
-test('Live offers the v3 voices and does not merge a different protocol catalog', () => {
-  assert.deepEqual(voicesFrom({voices:{v1:['cove','sol'],v3:['cove','hanul','haetsal'],defaultV1:'cove'}}), {
-    ids:['cove','hanul','haetsal'],defaultVoice:'cove'
+test('Live picker excludes Korean-only voices and uses English labels', () => {
+  assert.deepEqual(voicesFrom({voices:{v1:['cove','sol'],v3:['cove','hanul','haetsal','miko'],defaultV1:'cove'}}), {
+    ids:['cove','miko'],defaultVoice:'cove'
   });
+  const groups = voiceGroups(['cove','miko','future_voice']);
+  assert.deepEqual(groups, [
+    {label:'English', ids:['cove']},
+    {label:'German', ids:['miko']},
+    {label:'Other', ids:['future_voice']},
+  ]);
+  assert.equal(voiceName('future_voice'),'Future Voice');
+  assert.doesNotMatch(JSON.stringify(groups),/[\\uAC00-\\uD7AF]/);
 });
 
-test('older runtimes without v3 retain their supported voice choices', () => {
-  assert.deepEqual(voicesFrom({voices:{v1:['cove','sol'],defaultV1:'cove'}}), {
+test('older runtimes without v3 retain supported non-Korean voices', () => {
+  assert.deepEqual(voicesFrom({voices:{v1:['cove','sol','hanul'],defaultV1:'cove'}}), {
     ids:['cove','sol'],defaultVoice:'cove'
   });
 });
 
-test('an omitted optional v3 list may be serialized as an empty array', () => {
+test('an empty v3 selection falls back to the legacy catalog', () => {
   assert.deepEqual(voicesFrom({voices:{v1:['cove','sol'],v3:[],defaultV1:'cove'}}), {
     ids:['cove','sol'],defaultVoice:'cove'
   });
 });
 
-test('new voices retain filtering, deduplication and a valid default', () => {
-  assert.deepEqual(voicesFrom({voices:{v3:['hanul','haetsal','hanul','<script>',null],defaultV1:'cove'}}), {
-    ids:['hanul','haetsal'],defaultVoice:'hanul'
+test('a v3 catalog containing only excluded voices falls back to v1', () => {
+  assert.deepEqual(voicesFrom({voices:{v1:['cove','sol'],v3:['hanul','haetsal'],defaultV1:'cove'}}), {
+    ids:['cove','sol'],defaultVoice:'cove'
   });
-});
-
-test('voice groups only contain available voices and preserve unclassified additions', () => {
-  assert.deepEqual(voiceGroups(['cove', 'haetsal', 'hanul', 'miko', 'arbor', 'future_voice']), [
-    {label:'한국어', ids:['hanul', 'haetsal']},
-    {label:'미국 영어', ids:['cove']},
-    {label:'독일어', ids:['miko']},
-    {label:'기타', ids:['arbor', 'future_voice']},
-  ]);
-  assert.deepEqual(voiceGroups(['cove']), [{label:'미국 영어', ids:['cove']}]);
-  assert.deepEqual(voiceGroups([]), []);
-  assert.equal(voiceName('hanul'), '한울');
-  assert.equal(voiceName('haetsal'), '햇살');
-  assert.equal(voiceName('cove'), 'Cove');
 });
