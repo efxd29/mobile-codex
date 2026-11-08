@@ -30,7 +30,7 @@
       if (session) session.reconnectTimer = null;
     }
     function recoverableError(error) {
-      return /(?:connection|disconnect|network|timeout|timed out|temporar|interrupted|playback|ice\\b|reconnect)/i.test(String(error || ''));
+      return /(?:connection|disconnect|network|timeout|timed out|temporar|interrupted|playback|ice|reconnect)/i.test(String(error || ''));
     }
     let voice = localStorage.getItem('live-voice') || '', language = localStorage.getItem('live-language') || 'en';
     if (language !== 'en') language = 'en';
@@ -126,6 +126,7 @@
       if (session.reconnectTimer) return;
       status('Reconnecting…');
       session.reconnectTimer = setTimeout(() => {
+        session.reconnectTimer = null;
         if (current !== session || session.connected) return;
         void reconnect(session, message);
       }, reconnectDelayMs);
@@ -155,7 +156,7 @@
       if (data.threadId) current.localThread = data.threadId;
       if (data.userCaption !== undefined) $('live-caption-user').textContent = data.userCaption;
       if (data.assistantCaption !== undefined) $('live-caption-assistant').textContent = data.assistantCaption;
-      status(current.connected ? (current.muted ? '마이크 꺼짐' : '듣고 있어요') : '연결 중…');
+      status(data.phase === 'disconnected' ? 'Reconnecting…' : (current.connected ? (current.muted ? '마이크 꺼짐' : '듣고 있어요') : '연결 중…'));
       update(); changed();
     }
     function animate(session) {
