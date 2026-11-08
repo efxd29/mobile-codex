@@ -40,7 +40,7 @@ class NativeBuildTests(unittest.TestCase):
             source = native.libcxx_runtime(ndk)
             source.parent.mkdir(parents=True)
             elf = bytearray(64)
-            elf[:6] = b"\\x7fELF\\x02\\x01"
+            elf[:6] = b"\x7fELF\x02\x01"
             elf[18:20] = (183).to_bytes(2, "little")
             source.write_bytes(elf)
             nm = ndk / "toolchains" / "llvm" / "prebuilt" / native.host_tag() / "bin" / "llvm-nm"
@@ -57,7 +57,7 @@ class NativeBuildTests(unittest.TestCase):
             ndk, output = Path(root) / "ndk", Path(root) / "out"
             source = native.libcxx_runtime(ndk)
             source.parent.mkdir(parents=True)
-            elf = bytearray(b"\\x7fELF\\x02\\x01" + b"\\0" * 12)
+            elf = bytearray(b"\x7fELF\x02\x01" + b"\0" * 12)
             elf.extend((183).to_bytes(2, "little"))
             source.write_bytes(elf)
             nm = ndk / "toolchains" / "llvm" / "prebuilt" / native.host_tag() / "bin" / "llvm-nm"

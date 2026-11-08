@@ -52,7 +52,7 @@ def install_libcxx(ndk: Path, output: Path = OUTPUT) -> Path:
     if not source.is_file():
         raise FileNotFoundError(f"NDK libc++_shared.so not found: {source}")
     binary = source.read_bytes()
-    if len(binary) < 20 or binary[:6] != b"\\x7fELF\\x02\\x01" or int.from_bytes(binary[18:20], "little") != 183:
+    if len(binary) < 20 or binary[:6] != b"\x7fELF\x02\x01" or int.from_bytes(binary[18:20], "little") != 183:
         raise RuntimeError(f"NDK libc++_shared.so is not an ARM64 ELF: {source}")
     nm = ndk / "toolchains" / "llvm" / "prebuilt" / host_tag() / "bin" / "llvm-nm"
     if sys.platform.startswith("win"):
