@@ -1,5 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const {JSDOM} = require('jsdom');
 const {voicesFrom, voiceName, voiceGroups} = require('../app/src/main/assets/web/live.js');
 
 test('Live picker excludes Korean-only voices and uses English labels', () => {
@@ -36,4 +38,66 @@ test('a v3 catalog containing only excluded voices falls back to v1', () => {
   assert.deepEqual(voicesFrom({voices:{v1:['cove','sol'],v3:['hanul','haetsal'],defaultV1:'cove'}}), {
     ids:['cove','sol'],defaultVoice:'cove'
   });
+});
+
+function liveHarness() {
+  const dom = new JSDOM(fs.readFileSync('app/src/main/assets/web/index.html','utf8'), {
+    url:'https://appassets.androidplatform.net/index.html',
+    runScripts:'outside-only',
+  });
+  const w=dom.window, calls=[];
+  let id=0;
+  Object.defineProperty(w.crypto,'randomUUID',{value:()=>`live-${++id}`});
+  w.requestAnimationFrame=()=>0; w.cancelAnimationFrame=()=>{};
+  w.HTMLDialogElement.prototype.showModal=function(){this.setAttribute('open','');};
+  w.HTMLDialogElement.prototype.close=function(){this.removeAttribute('open');this.dispatchEvent(new w.Event('close'));};
+  const state={ready:true,busy:false,proBusy:false,account:{type:'chatgpt'},threadId:'thread-1',live:{key:''},models:[]};
+  const call=async(action,args={})=>{
+    calls.push({action,args});
+    if(action==='live.voices')return {voices:{v3:['cove'],defaultV1:'cove'}};
+    if(action==='live.microphone')return {ok:true};
+    if(action==='live.start')return {key:args.key,threadId:'thread-1',connected:true,phase:'connected'};
+    return {ok:true};
+  };
+  w.eval(fs.readFileSync('app/src/main/assets/web/live.js','utf8'));
+  const ui=w.MobileCodexLive.create({
+    call,getState:()=>state,getOptions:()=>({model:'gpt-test',effort:'high',fastMode:false}),
+    show:id=>w.document.getElementById(id).showModal(),
+    close:id=>w.document.getElementById(id).close(),
+    t:value=>value,errorText:(error,fallback)=>String(error?.message||error||fallback),changed:()=>{},
+  });
+  return {dom,w,ui,calls};
+}
+const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+async function waitFor(predicate) {
+  for(let i=0;i<100;i++){if(predicate())return;await wait(10);}
+  assert.fail('Timed out waiting for Live action');
+}
+
+test('Live retries a recoverable network disconnect with a new session key and never replays text', async()=>{
+  const {dom,w,ui,calls}=liveHarness();
+  try {
+    w.document.getElementById('live-start').click();
+    await waitFor(()=>calls.filter(item=>item.action==='live.start').length===1);
+    const first=calls.find(item=>item.action==='live.start');
+    await ui.event('live.audio',{key:first.args.key,phase:'ended',retryable:true,error:'network disconnected'});
+    await waitFor(()=>calls.filter(item=>item.action==='live.start').length===2);
+    const starts=calls.filter(item=>item.action==='live.start');
+    assert.notEqual(starts[1].args.key,starts[0].args.key);
+    assert.equal(calls.some(item=>item.action==='live.text'||item.action==='chat.send'),false);
+    assert.equal(ui.active(),true);
+  } finally { ui.end(); dom.window.close(); }
+});
+
+test('Live does not auto-retry protocol or entitlement errors', async()=>{
+  const {dom,w,ui,calls}=liveHarness();
+  try {
+    w.document.getElementById('live-start').click();
+    await waitFor(()=>calls.filter(item=>item.action==='live.start').length===1);
+    const first=calls.find(item=>item.action==='live.start');
+    await ui.event('live.event',{key:first.args.key,method:'thread/realtime/error',params:{message:'not entitled'}});
+    await wait(1800);
+    assert.equal(calls.filter(item=>item.action==='live.start').length,1);
+    assert.equal(ui.active(),false);
+  } finally { ui.end(); dom.window.close(); }
 });
