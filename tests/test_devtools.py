@@ -10,6 +10,7 @@ import sys
 import tempfile
 import unittest
 import zipfile
+import tarfile
 
 
 spec = importlib.util.spec_from_file_location(
