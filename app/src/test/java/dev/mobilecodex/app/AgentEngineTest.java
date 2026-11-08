@@ -65,6 +65,13 @@ public class AgentEngineTest {
         call("chat.send",obj("text","Use Fast mode","model","gpt-test","effort","medium","fastMode",true));
         assertEquals("fast",turns().get(0).getString("serviceTierForTurn"));
     }
+    @Test public void fastModeAcceptsObjectShapedPriorityTier()throws Exception{
+        field("account",obj("type","chatgpt"));
+        field("models",array(obj("id","gpt-test","model","gpt-test","isDefault",true,"serviceTiers",array(obj("id","priority","name","Fast")))));
+        codex();
+        call("chat.send",obj("text","Use Fast mode","model","gpt-test","effort","medium","fastMode",true));
+        assertEquals("priority",turns().get(0).getString("serviceTierForTurn"));
+    }
     JSONObject waitFor(Callable<Boolean> done)throws Exception{for(int i=0;i<200;i++){JSONObject state=call("state",obj());if(done.call())return state;Thread.sleep(25);}fail("Condition was not reached");return null;}
     static JSONObject agentMessage(JSONObject state,String agent){JSONArray messages=state.optJSONArray("messages");for(int i=messages.length()-1;i>=0;i--)if(agent.equals(messages.optJSONObject(i).optString("agent")))return messages.optJSONObject(i);return null;}
 
