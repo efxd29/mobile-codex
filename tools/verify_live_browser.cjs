@@ -105,6 +105,31 @@ async function main(){
    assert.equal(await page.locator('#live-voice-name').textContent(),'Maple');
    assert.equal(await page.locator('#live-voice-picker').evaluate(el=>el.open),false);
    await page.locator('#live-settings-back').click();
+   // A persistent network disconnect starts one bounded reconnect on the same Codex thread.
+   if (width===320 && theme==='light') {
+     const originalThread=await page.evaluate(()=>window.__liveFx.calls.filter(c=>c.action==='live.start').at(-1).args.expectedThreadId);
+     await page.evaluate(()=>{
+       const key=window.__liveFx.peers.at(-1).key;
+       window.mobileCodexEvent('live.event',{key,method:'thread/realtime/transcript/done',params:{role:'user',text:'Keep this transcript after reconnect'}});
+       const peer=window.__liveFx.peers.at(-1);
+       window.mobileCodexEvent('live.audio',{...peer.state,key,phase:'disconnected',connected:false});
+     });
+     await page.waitForFunction(()=>window.__liveFx.calls.filter(c=>c.action==='live.start').length===3,{timeout:12000});
+     await page.waitForFunction(()=>document.querySelector('#live-status').textContent==='Listening');
+     assert.equal(await page.locator('#live-caption-user').textContent(),'Keep this transcript after reconnect');
+     assert.equal(await page.evaluate(()=>window.__liveFx.calls.filter(c=>c.action==='live.start')[2].args.expectedThreadId),originalThread);
+     assert.notEqual(
+       await page.evaluate(()=>window.__liveFx.calls.filter(c=>c.action==='live.start')[1].args.key),
+       await page.evaluate(()=>window.__liveFx.calls.filter(c=>c.action==='live.start')[2].args.key)
+     );
+     // A second failure in the same call shows Retry instead of looping forever.
+     await page.evaluate(()=>{
+       const peer=window.__liveFx.peers.at(-1);
+       window.mobileCodexEvent('live.audio',{...peer.state,key:peer.key,phase:'disconnected',connected:false});
+     });
+     await page.waitForFunction(()=>!document.querySelector('#live-retry').hidden,{timeout:3000});
+     assert.equal(await page.evaluate(()=>window.__liveFx.calls.filter(c=>c.action==='live.start').length),3);
+   }
    // Notification/focus-loss events also close a hidden call and its audio.
    await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));const key=window.__liveFx.peers.at(-1).key;window.mobileCodexEvent('live.interrupted',{key});});
    await page.waitForFunction(()=>window.__liveFx.peers.every(peer=>peer.pc.connectionState==='closed'));
@@ -118,7 +143,7 @@ async function main(){
    await page.evaluate(()=>{window.__liveFx.deny=false;window.__liveFx.hold=true;});await page.locator('#live-start').click();
    await page.waitForFunction(()=>window.__liveFx.releaseMicrophone);await page.locator('#live-end').click();await page.evaluate(()=>window.__liveFx.releaseMicrophone());
    await page.waitForFunction(()=>!document.querySelector('#live-start').disabled);
-   assert.equal(await page.evaluate(()=>window.__liveFx.calls.filter(c=>c.action==='live.start').length),2);
+   assert.equal(await page.evaluate(()=>window.__liveFx.calls.filter(c=>c.action==='live.start').length),3);
    // A recreated page restores the already-running native call without starting another one.
    await page.evaluate(()=>{
      const fx=window.__liveFx,state={key:'restored-native-call',phase:'connected',connected:true,muted:true,
@@ -128,7 +153,7 @@ async function main(){
    });
    await page.waitForFunction(()=>document.querySelector('#live-caption-assistant').textContent==='saved reply');
    assert.equal(await page.locator('#live-mute').getAttribute('aria-pressed'),'true');
-   assert.equal(await page.evaluate(()=>window.__liveFx.calls.filter(c=>c.action==='live.start').length),2);
+   assert.equal(await page.evaluate(()=>window.__liveFx.calls.filter(c=>c.action==='live.start').length),3);
    await page.locator('#live-end').click();
    assert.deepEqual(errors,[]);await context.close();console.log(`Live native bridge/UI ${width}px ${theme} passed`);
   }
