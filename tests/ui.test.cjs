@@ -413,7 +413,8 @@ test('tool refresh keeps a prior category list when one protocol request fails',
    return {data:[]};
  }});await tick();w.document.getElementById('show-tools').click();await tick();w.document.getElementById('show-tools-panel').click();await tick();await tick();
  assert.match(w.document.getElementById('tools-list').textContent,/Keep me/);
- w.document.getElementById('refresh-tools').click();await tick();await tick();
+ w.document.getElementById('refresh-tools').click();
+ await new Promise(resolve=>setTimeout(resolve,160));await tick();await tick();
  assert.match(w.document.getElementById('tools-list').textContent,/이전 목록을 표시합니다/);
  assert.match(w.document.getElementById('tools-list').textContent,/Keep me/);
 });
