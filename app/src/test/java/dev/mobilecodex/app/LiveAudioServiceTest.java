@@ -76,6 +76,24 @@ public class LiveAudioServiceTest {
             assertEquals(0,service.getSystemService(NotificationManager.class).getActiveNotifications().length);
         } finally { controller.destroy(); }
     }
+    @Test public void transientAudioFocusLossDoesNotEndLiveCall() throws Exception {
+        var controller=Robolectric.buildService(LiveAudioService.class).create();
+        try {
+            var service=controller.get(); var stopped=new AtomicInteger();
+            service.begin("one",stopped::incrementAndGet);
+            var lock=lock(service);
+            var listener=org.robolectric.Shadows.shadowOf(service.getSystemService(AudioManager.class)).getLastAudioFocusRequest().listener;
+            listener.onAudioFocusChange(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT);
+            assertTrue(lock.isHeld()); assertEquals(0,stopped.get()); assertEquals("one",LiveAudioService.active().snapshot().optString("key"));
+            listener.onAudioFocusChange(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK);
+            assertTrue(lock.isHeld()); assertEquals(0,stopped.get());
+            listener.onAudioFocusChange(AudioManager.AUDIOFOCUS_GAIN);
+            assertTrue(lock.isHeld()); assertEquals(0,stopped.get());
+            service.stop("one");
+            assertFalse(lock.isHeld()); assertEquals(1,stopped.get());
+        } finally { controller.destroy(); }
+    }
+
     @Test public void losingAudioFocusStopsOnceAndReleasesResources() throws Exception {
         var controller=Robolectric.buildService(LiveAudioService.class).create();
         try {
