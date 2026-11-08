@@ -41,8 +41,10 @@ final class NativeLiveRtc implements LiveRtc {
     static List<String> iceServerUrls() { return ICE_SERVER_URLS; }
 
     private static PeerConnection.RTCConfiguration rtcConfiguration() {
-        List<PeerConnection.IceServer> iceServers = ICE_SERVER_URLS.stream()
-            .map(url -> PeerConnection.IceServer.builder(url).createIceServer()).toList();
+        List<PeerConnection.IceServer> iceServers = new java.util.ArrayList<>();
+        for (String url : ICE_SERVER_URLS) {
+            iceServers.add(PeerConnection.IceServer.builder(url).createIceServer());
+        }
         PeerConnection.RTCConfiguration config = new PeerConnection.RTCConfiguration(iceServers);
         config.sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN;
         return config;
