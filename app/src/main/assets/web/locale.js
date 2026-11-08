@@ -6,7 +6,7 @@
   try { native = JSON.parse(window.Native?.locale?.() || '{}'); } catch {}
   let choice = native.choice || localStorage.getItem('language') || 'system';
   const deviceLanguage = native.systemLanguage || navigator.language || 'en';
-  const language = () => (choice === 'system' ? deviceLanguage : choice).toLowerCase().startsWith('ko') ? 'ko' : 'en';
+  const language = () => (choice !== 'system' && choice.toLowerCase().startsWith('ko')) ? 'ko' : 'en';
   const t = (key, args = {}) => {
     const value = language() === 'ko' ? key : (catalog[key] ?? key);
     return value.replace(/\{([a-zA-Z]+)\}/g, (token, name) => Object.hasOwn(args, name) ? String(args[name]) : token);
