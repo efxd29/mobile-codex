@@ -66,6 +66,15 @@ public class LiveSessionTest {
         assertFalse(live.getString("prompt").contains("Korean"));
         assertTrue(thread.getJSONArray("dynamicTools").length()>0);
     }
+    @Test public void reconnectCreatesANewLiveSessionOnTheExistingConversation()throws Exception{
+        call("live.start",args("one"));
+        call("live.stop",obj("key","one"));
+        call("live.start",args("two"));
+        assertEquals(2,calls.stream().filter(c->c.optString("method").equals("thread/realtime/start")).count());
+        assertEquals("remote-live",params("thread/realtime/start").getString("threadId"));
+        assertFalse(calls.stream().anyMatch(c->c.optString("method").equals("turn/start")));
+        assertEquals("two",call("state",obj()).getJSONObject("live").getString("key"));
+    }
     @Test public void stoppingVoiceDoesNotInterruptTaskAndStaleStopsCannotEndReplacement()throws Exception {
         call("live.start",args("one"));call("live.stop",obj("key","one"));
         call("live.start",args("two"));int count=calls.size();
