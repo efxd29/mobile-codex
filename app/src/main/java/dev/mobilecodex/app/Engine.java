@@ -122,6 +122,12 @@ public final class Engine {
     private long lastAccountCheckElapsed = -1;
     private boolean autoRestorePaused, loginInProgress;
     private JSONObject rateLimits = new JSONObject();
+    private static final long RATE_LIMIT_CACHE_TTL_MS = 5 * 60 * 1000L;
+    private final ExecutorService rpcReads = Executors.newFixedThreadPool(3, task -> {
+        Thread thread = new Thread(task, "codex-read-rpc");
+        thread.setDaemon(true);
+        return thread;
+    });
     /** Do not publish a staged target until account/rate-limit validation passes. */
     private boolean suppressStatePublish;
     private boolean stagedSwitchValidation;
@@ -179,6 +185,7 @@ public final class Engine {
 
     public Engine(Context context) {
         this.context = context;
+        restoreRuntimeCache();
         usageWidgets = new UsageWidgetStore(context);
         permissionMode = context.getSharedPreferences("settings", 0).getString("permissions", "workspace-write");
         approvalMode = context.getSharedPreferences("settings", 0).getString("approvalMode", "auto-review");
@@ -201,6 +208,34 @@ public final class Engine {
         try { sessions = sessionStore.sessions(); } catch (IOException impossible) { throw new IllegalStateException(impossible); }
         if (!sessionStore.recoveryRequired()) restoreSessionProjects();
     }
+    private void restoreRuntimeCache() {
+        var cache = context.getSharedPreferences("runtime-cache", 0);
+        try {
+            String savedModels = cache.getString("models", "");
+            if (!savedModels.isBlank()) models = new JSONArray(savedModels);
+        } catch (Exception ignored) { models = new JSONArray(); }
+        try {
+            String savedLimits = cache.getString("rateLimits", "");
+            if (!savedLimits.isBlank()) rateLimits = new JSONObject(savedLimits);
+        } catch (Exception ignored) { rateLimits = new JSONObject(); }
+    }
+    private void persistModelsCache() {
+        try { context.getSharedPreferences("runtime-cache", 0).edit().putString("models", models.toString()).apply(); }
+        catch (Exception ignored) { }
+    }
+    private boolean rateLimitsCacheFresh() {
+        long fetchedAt = context.getSharedPreferences("runtime-cache", 0).getLong("rateLimitsFetchedAt", 0);
+        long age = System.currentTimeMillis() - fetchedAt;
+        return fetchedAt > 0 && age >= 0 && age < RATE_LIMIT_CACHE_TTL_MS;
+    }
+    private void persistRateLimitsCache() {
+        try {
+            context.getSharedPreferences("runtime-cache", 0).edit()
+                .putString("rateLimits", rateLimits.toString())
+                .putLong("rateLimitsFetchedAt", System.currentTimeMillis())
+                .apply();
+        } catch (Exception ignored) { }
+    }
     public void attach(Ui ui) {
         this.ui = ui;
         io.execute(() -> {
@@ -220,7 +255,9 @@ public final class Engine {
             // share the same queue as logout, account switching, and runtime stop.
             if (autoRestorePaused || loginInProgress || hasRunningTurns()) return;
             long cooldown = "error".equals(authState) ? 10_000 : 60_000;
-            if (lastAccountCheckElapsed >= 0 && SystemClock.elapsedRealtime() - lastAccountCheckElapsed < cooldown) return;
+            boolean transportMissing = ready && testTransport == null && !processIsAlive();
+            if (!transportMissing && lastAccountCheckElapsed >= 0
+                    && SystemClock.elapsedRealtime() - lastAccountCheckElapsed < cooldown) return;
             try { refreshAccount(); }
             catch (Exception ignored) { /* State carries the failure; no startup toast/dialog. */ }
         });
@@ -236,7 +273,11 @@ public final class Engine {
         authState = "checking"; authError = "";
         try {
             if (!ready || (testTransport == null && !processIsAlive())) start();
-            else { readAccount(); readRateLimits(); publish(); }
+            else {
+                readAccount();
+                if (!rateLimitsCacheFresh()) readRateLimits();
+                publish();
+            }
         } catch (Exception error) {
             if (!"signed_out".equals(authState)) {
                 authState = "error";
@@ -378,9 +419,12 @@ public final class Engine {
         if (widgetProcess == null || process != widgetProcess || !ready || !process.isAlive() || rpc == null || rpc.isClosed()) return;
         context.startForegroundService(new Intent(context, EngineService.class));
         widgetProcess = null;
-        try { models = call("model/list", obj("limit", 100, "includeHidden", false)).optJSONArray("data"); }
-        catch (Exception ignored) { models = new JSONArray(); }
-        if (models == null) models = new JSONArray();
+        if (models.length() == 0) {
+            try {
+                JSONArray latest = call("model/list", obj("limit", 100, "includeHidden", false)).optJSONArray("data");
+                if (latest != null) { models = latest; persistModelsCache(); }
+            } catch (Exception ignored) { }
+        }
     }
     private void persist() {
         try { persistSessions(sessions); }
@@ -631,6 +675,20 @@ public final class Engine {
         }
         // Never queue consent revocation behind a slow engine/tool operation.
         if (Set.of("phone.stop", "chat.stop", "runtime.stop", "auth.logout").contains(action)) PhoneUseService.stopControl();
+        // Small local config reads must not wait behind a slow app-server request.
+        if (action.equals("config.read")) {
+            try {
+                File config = new File(codexHome.root(), "config.toml");
+                reply.complete(obj("content", config.exists() ? dev.mobilecodex.app.core.Utf8Files.read(config.toPath()) : ""), null);
+            } catch (Exception error) { reply.complete(null, error); }
+            return;
+        }
+        // MCP/Skills lists are independent JSON-RPC reads. Keep them off the serial
+        // engine queue so a slow marketplace cannot block chat.send or settings.
+        if (action.equals("rpc") && concurrentReadRpc(args.optString("method"))) {
+            rpcReads.execute(() -> handleConcurrentReadRpc(args, reply));
+            return;
+        }
         // Installation cancellation must not queue behind a long Codex RPC.
         if (action.equals("linux.cancel")) { linux.cancel(); reply.complete(linux.status(), null); return; }
         io.execute(() -> {
@@ -670,7 +728,7 @@ public final class Engine {
                         if (!ready) start();
                         JSONArray latest = call("model/list", obj("limit", 100, "includeHidden", false), 10).optJSONArray("data");
                         if (latest == null) throw new IOException(t("모델 목록 응답이 올바르지 않습니다."));
-                        models = latest; publish(); reply.complete(obj("models", models), null);
+                        models = latest; persistModelsCache(); publish(); reply.complete(obj("models", models), null);
                     }
                     case "devtools.check" -> { JSONObject result = devTools.check(codexHome.root(), runtimeAliases()); publish(); reply.complete(result, null); }
                     case "linux.status" -> reply.complete(linux.status(), null);
@@ -1022,11 +1080,17 @@ public final class Engine {
             rpc.notify("initialized", new JSONObject());
             ready = true; status = t("연결됨");
             readAccount();
-            readRateLimits();
-            if (foregroundRuntime) try { models = call("model/list", obj("limit", 100, "includeHidden", false)).optJSONArray("data"); }
-            catch (Exception ignored) { models = new JSONArray(); }
+            if (!rateLimitsCacheFresh()) readRateLimits();
+            if (foregroundRuntime && models.length() == 0) {
+                try {
+                    JSONArray latest = call("model/list", obj("limit", 100, "includeHidden", false)).optJSONArray("data");
+                    if (latest != null) { models = latest; persistModelsCache(); }
+                } catch (Exception ignored) { }
+            }
             if (models == null) models = new JSONArray();
-            if (restoreConversation) restoreConversation();
+            // Local conversation messages are already durable. Resume the remote thread
+            // only when the user sends the next turn, not on every cold app launch.
+            if (restoreConversation && pendingDeletionCount() > 0) retryPendingDeletions();
             diagnostic.ready();
             publish();
         } catch (Exception e) {
@@ -1068,11 +1132,30 @@ public final class Engine {
         publish();
         stopServiceIfIdle();
     }
+    private static boolean concurrentReadRpc(String method) {
+        return Set.of("plugin/list", "skills/list", "mcpServerStatus/list", "config/mcpServer/reload").contains(method);
+    }
+    private void handleConcurrentReadRpc(JSONObject args, Reply reply) {
+        try {
+            if (!ready || (testTransport == null && !processIsAlive())) {
+                CompletableFuture<Void> started = new CompletableFuture<>();
+                io.execute(() -> {
+                    try { start(false); started.complete(null); }
+                    catch (Throwable error) { started.completeExceptionally(error); }
+                });
+                started.get(70, TimeUnit.SECONDS);
+            }
+            String method = args.getString("method");
+            JSONObject params = args.optJSONObject("params") == null
+                ? new JSONObject() : new JSONObject(args.getJSONObject("params").toString());
+            reply.complete(call(method, params, 12), null);
+        } catch (Exception error) { reply.complete(null, unwrap(error)); }
+    }
     private JSONObject call(String method, JSONObject params) throws Exception { return call(method, params, 65); }
     private JSONObject call(String method, JSONObject params, int timeoutSeconds) throws Exception {
         if (testTransport != null) return testTransport.call(method, params);
         if (rpc == null) throw new IOException(t("먼저 Codex를 시작해 주세요."));
-        return rpc.request(method, params).get(timeoutSeconds, TimeUnit.SECONDS);
+        return rpc.request(method, params, timeoutSeconds).get(timeoutSeconds + 2L, TimeUnit.SECONDS);
     }
     private void readAccount() throws Exception {
         // Do not force a refresh here. In app-server v0.155.1,
@@ -1100,15 +1183,15 @@ public final class Engine {
         if (addAccountRestoreKey.isBlank() || !accountProfiles.hasPendingAddLogin()) publish();
     }
     private void readRateLimits() throws Exception {
-        if (account.length() == 0) { rateLimits = new JSONObject(); return; }
+        if (account.length() == 0) { rateLimits = new JSONObject(); persistRateLimitsCache(); return; }
         try {
             rateLimits = call("account/rateLimits/read", new JSONObject());
+            persistRateLimitsCache();
             // auth() may have refreshed credentials while fetching limits.
             // Persist that generation to the currently selected profile.
             accountProfiles.saveCurrentSnapshot(account);
         }
         catch (Exception error) {
-            rateLimits = new JSONObject();
             String message = unwrap(error).getMessage();
             if (message != null && (message.contains("token_revoked") || message.contains("invalidated oauth token") || message.contains("401")))
                 {
@@ -1116,8 +1199,10 @@ public final class Engine {
                     try { accountProfiles.markNeedsLogin(invalidKey); } catch (Exception ignored) { }
                     account = new JSONObject(); authState = "signed_out";
                     authError = t("저장된 계정의 로그인 토큰이 폐기되었습니다. 이 계정은 다시 로그인해야 합니다.");
+                    rateLimits = new JSONObject(); persistRateLimitsCache();
                     throw new IOException(authError, error);
                 }
+            // Preserve the last confirmed quota snapshot for transient failures.
         }
     }
     private JSONObject beginLogin(boolean add) throws Exception {
@@ -1213,14 +1298,18 @@ public final class Engine {
             JSONArray tiers = selected.optJSONArray("serviceTiers");
             for (String desired : new String[]{"fast", "priority"}) {
                 if (tiers != null) for (int i = 0; i < tiers.length(); i++) {
-                    JSONObject tier = tiers.optJSONObject(i);
-                    if (tier != null && desired.equals(tier.optString("id"))) return desired;
+                    Object value = tiers.opt(i);
+                    String id = value instanceof JSONObject tier ? tier.optString("id") : value instanceof String text ? text : "";
+                    if (desired.equals(id)) return desired;
                 }
             }
             JSONArray legacy = selected.optJSONArray("additionalSpeedTiers");
             for (String desired : new String[]{"fast", "priority"}) {
-                if (legacy != null) for (int i = 0; i < legacy.length(); i++)
-                    if (desired.equals(legacy.optString(i))) return desired;
+                if (legacy != null) for (int i = 0; i < legacy.length(); i++) {
+                    Object value = legacy.opt(i);
+                    String id = value instanceof JSONObject tier ? tier.optString("id") : value instanceof String text ? text : "";
+                    if (desired.equals(id)) return desired;
+                }
             }
         }
         throw new IOException(t("선택한 모델에서는 Fast 모드를 지원하지 않습니다."));
