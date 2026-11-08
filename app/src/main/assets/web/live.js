@@ -112,7 +112,10 @@
         await end({hide:false, message});
         return;
       }
-      const context = {reconnectAttempts:session.reconnectAttempts + 1, preserveTranscript:true};
+      const context = {
+        reconnectAttempts:session.reconnectAttempts + 1,
+        preserveTranscript:true
+      };
       status('Reconnecting…');
       await end({hide:false, message:'Reconnecting…'});
       await start(context);
@@ -154,8 +157,10 @@
       else if (data.phase === 'failed') { void reconnect(current, 'Voice connection failed. Tap Retry to reconnect.'); return; }
       else if (data.phase === 'disconnected') scheduleReconnect(current);
       if (data.threadId) current.localThread = data.threadId;
-      if (data.userCaption !== undefined) $('live-caption-user').textContent = data.userCaption;
-      if (data.assistantCaption !== undefined) $('live-caption-assistant').textContent = data.assistantCaption;
+      if (data.userCaption !== undefined && !(current.preserveTranscript && data.userCaption === ''))
+        $('live-caption-user').textContent = data.userCaption;
+      if (data.assistantCaption !== undefined && !(current.preserveTranscript && data.assistantCaption === ''))
+        $('live-caption-assistant').textContent = data.assistantCaption;
       status(data.phase === 'disconnected' ? 'Reconnecting…' : (current.connected ? (current.muted ? '마이크 꺼짐' : '듣고 있어요') : '연결 중…'));
       update(); changed();
     }
@@ -177,7 +182,8 @@
       }
       const session = {
         key:crypto.randomUUID(), scale:1, velocity:0, muted:false, connected:false,
-        started:false, reconnectAttempts:reconnectContext?.reconnectAttempts || 0, reconnectTimer:null
+        started:false, reconnectAttempts:reconnectContext?.reconnectAttempts || 0,
+        preserveTranscript:!!reconnectContext?.preserveTranscript, reconnectTimer:null
       };
       current = session; update(); changed();
       const state = getState(), expectedThreadId = state.threadId || '', workspaceKey = state.workspace?.key || '', options = getOptions();
