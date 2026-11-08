@@ -7,6 +7,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 import unittest
 import zipfile
@@ -74,6 +75,33 @@ class DevtoolsPackagingTests(unittest.TestCase):
             "libandroid-shmem": {}, "libtalloc": {},
         }
         self.assertEqual(devtools.resolve_packages(index, ("proot",)), ["libandroid-shmem", "libtalloc", "proot"])
+
+    def test_termux_absolute_symlink_is_normalized_inside_runtime_prefix(self):
+        member_name = "./data/data/com.termux/files/usr/lib/python3.14/site-packages/pip/_vendor/certifi/cacert.pem"
+        linkname = "/data/data/com.termux/files/usr/etc/tls/cert.pem"
+        archive_bytes = io.BytesIO()
+        with tarfile.open(fileobj=archive_bytes, mode="w") as archive:
+            member = tarfile.TarInfo(member_name)
+            member.type = tarfile.SYMTYPE
+            member.linkname = linkname
+            archive.addfile(member)
+
+        archive_bytes.seek(0)
+        with tarfile.open(fileobj=archive_bytes, mode="r:") as archive:
+            members = list(devtools.safe_tar_members(archive))
+        self.assertEqual(len(members), 1)
+        self.assertEqual(
+            devtools.relative_symlink_target(member_name, linkname),
+            "etc/tls/cert.pem",
+        )
+        for unsafe_target in (
+            "/system/etc/passwd",
+            "/data/data/com.termux/files/usr/../../etc/passwd",
+            "../../../../../../etc/passwd",
+        ):
+            with self.subTest(target=unsafe_target):
+                with self.assertRaises(devtools.PackagingError):
+                    devtools.relative_symlink_target(member_name, unsafe_target)
 
     def test_archive_validation_rejects_path_traversal_symlink_and_elf(self):
         with tempfile.TemporaryDirectory() as directory:
