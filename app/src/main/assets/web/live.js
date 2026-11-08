@@ -109,7 +109,10 @@
     }
     function fail(session, error) {
       if (current !== session) return;
-      end({hide:false, message:errorText(error, t('음성 연결에 실패했습니다. 다시 연결해 주세요.'))});
+      const raw = String(error?.message ?? error ?? '');
+      const retryable = raw.startsWith('LIVE_RETRYABLE:');
+      const message = retryable ? raw.slice('LIVE_RETRYABLE:'.length) : raw;
+      end({hide:false, message:errorText(message, t('Voice connection failed.')), retryable});
     }
     function applyNativeState(data) {
       if (!data?.key || data.key === dismissedKey || (current && current.key !== data.key)) return;
