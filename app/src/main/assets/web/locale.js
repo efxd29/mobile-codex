@@ -5,9 +5,8 @@
   let native = {};
   try { native = JSON.parse(window.Native?.locale?.() || '{}'); } catch {}
   let choice = native.choice || localStorage.getItem('language') || 'system';
-  if (choice === 'ko') choice = 'en';
-  if (!['system', 'en'].includes(choice)) choice = 'system';
-  const language = () => 'en';
+  const deviceLanguage = native.systemLanguage || navigator.language || 'en';
+  const language = () => (choice === 'system' ? deviceLanguage : choice).toLowerCase().startsWith('ko') ? 'ko' : 'en';
   const t = (key, args = {}) => {
     const value = language() === 'ko' ? key : (catalog[key] ?? key);
     return value.replace(/\{([a-zA-Z]+)\}/g, (token, name) => Object.hasOwn(args, name) ? String(args[name]) : token);
@@ -38,6 +37,6 @@
     }
   }
   window.MobileCodexLocale = {t, language, choice:() => choice, apply,
-    set(value) { choice = ['system','en'].includes(value) ? value : 'en'; localStorage.setItem('language', choice); apply(); }};
+    set(value) { choice = ['system','en','ko'].includes(value) ? value : 'system'; localStorage.setItem('language', choice); apply(); }};
   apply();
 })();
