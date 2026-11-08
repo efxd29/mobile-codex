@@ -1698,7 +1698,17 @@
     } catch (error) { $('instructions-status').textContent = t('저장하지 못했습니다. 작성 내용은 그대로 남아 있습니다. ') + error.message; }
     finally { instructionsSaving = false; $('instructions-save').disabled = false; }
   }
-  async function config() { const result = await call('config.read'); configOriginal = result.content; $('config-editor').value = result.content; show('config-dialog'); }
+  async function config() {
+    const editor = $('config-editor');
+    const hadDraft = editor.value !== configOriginal;
+    show('config-dialog');
+    if (!hadDraft) editor.value = configOriginal;
+    try {
+      const result = await call('config.read');
+      configOriginal = result.content;
+      if (!hadDraft) editor.value = result.content;
+    } catch (error) { toast(error.message); }
+  }
   let changesGeneration = 0, changesScope = '', selectedChange = null, restoringChange = false;
   const reviewScope = () => (state.workspace?.key || '') + '\0' + (state.threadId || '');
   const reviewArgs = extra => ({workspaceKey:state.workspace?.key || '', ...extra});
@@ -1766,7 +1776,8 @@
     if (!entries?.length) $('recovery-list').append(node('p', t('저장된 복구 사본이 없습니다.'), 'empty-note'));
   }
   let toolsScope = "", toolsGeneration = 0, toolsTab = 0, toolsQuery = "";
-  const currentToolsScope = () => JSON.stringify([state.cwd, state.threadId, state.account]);
+  // MCP configuration is global to CODEX_HOME; switching chats must not invalidate its cache.
+  const currentToolsScope = () => JSON.stringify([state.cwd, state.account]);
   function usageTime(value) {
     if (!Number.isSafeInteger(value) || value <= 0 || value > 8640000000000) return '';
     const date = new Date(value * 1000); if (!Number.isFinite(date.getTime())) return '';
@@ -1988,7 +1999,9 @@
     const results = await Promise.allSettled([
       read('plugin/list', {cwds, ...(force ? {forceRefetch:true} : {})}),
       read('skills/list', {cwds, ...(force ? {forceReload:true} : {})}),
-      read('mcpServerStatus/list', {detail:'toolsAndAuthOnly', limit:100, ...(state.threadId ? {threadId: state.threadId} : {})})
+      // This is a global server-status query. Supplying a chat thread ID can make
+      // app-server reject the whole list with "thread not found".
+      read('mcpServerStatus/list', {detail:'toolsAndAuthOnly', limit:100})
     ]);
     if (generation !== toolsGeneration || scope !== currentToolsScope()) return;
     target.replaceChildren();
@@ -2054,7 +2067,7 @@
           const c = card(serverName, status + t(' · 도구 ') + Object.keys(server.tools || {}).length + t('개'), panel);
           if (server.toolsError) c.querySelector('.tool-card-main').append(node('p', errorText(server.toolsError), 'muted tool-card-error'));
           const normalizedName = serverName.toLowerCase().replace(/[^a-z0-9]/g, '');
-          const isRdc = normalizedName === 'rdc' || normalizedName === 'remotedesktopcommander';
+          const isRdc = ['rdc', 'dc', 'desktopcommander', 'remotedesktopcommander'].includes(normalizedName);
           const serverActions = [
             button(t('도구 보기'), () => { logEvent('MCP: ' + serverName, server); show('activity-dialog'); }),
             button(t('로그인'), async () => {
@@ -2062,7 +2075,7 @@
               await call('ui.externalBrowser', {url: result.authorizationUrl});
             })
           ];
-          if (isRdc) serverActions.push(button(t('로그아웃'), async () => {
+          if (isRdc) serverActions.push(button(t('Sign out'), async () => {
             if (!confirm(t('RDC 계정에서 로그아웃할까요?'))) return;
             await call('mcp.logout', {name: serverName});
             toast(t('RDC 계정 연결을 해제했습니다.'));
@@ -2529,7 +2542,15 @@
       if (terminalState.id === session.id && !terminalState.stopping) $('terminal-status').textContent = errorText(error.message);
     } finally { terminalSending = false; terminalControls(); $('terminal-command').focus(); }
   }, 'submit');
-  on('show-tools', () => show('tool-menu-dialog')); on('show-tools-panel', () => { closeToolMenu(); return loadTools(false); }); on('refresh-tools', () => loadTools(true));
+  on('show-tools', () => show('tool-menu-dialog')); on('show-tools-panel', () => { closeToolMenu(); return loadTools(false); });
+  on('refresh-tools', async () => {
+    const refresh = $('refresh-tools');
+    if (refresh.disabled) return;
+    refresh.disabled = true;
+    refresh.textContent = t('Refreshing…');
+    try { await loadTools(true); }
+    finally { refresh.disabled = false; refresh.textContent = t('Refresh'); }
+  });
   on('marketplace-add', async () => { const source = await input(t('마켓플레이스 추가'), t('Git URL 또는 기기의 로컬 경로')); if (source) { const result = await rpc('marketplace/add', {source}); toast(result.marketplaceName + t(' 추가 완료')); await loadTools(); } });
   on('skill-import', async () => { const r = await call('skills.import'); if (!r.cancelled) { toast(t('스킬 폴더를 가져왔습니다.')); await loadTools(); } });
   $('request-dialog').addEventListener('cancel', e => e.preventDefault());
