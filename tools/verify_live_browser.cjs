@@ -83,7 +83,7 @@ async function main(){
    assert.equal(await page.locator('#live-voice-picker').evaluate(el=>el.open),false);
    await page.screenshot({path:path.join(out,`settings-collapsed-${captureId}.png`)});
    await page.locator('#live-voice-toggle').click();
-   assert.equal(await page.locator('.live-voice-choice').count(),25);
+   assert.equal(await page.locator('.live-voice-choice').count(),23);
    assert.deepEqual(await page.locator('.live-voice-group').allTextContents(),['English (US)','German','Other']);
    assert.equal(await page.locator('.live-voice-choice').filter({has:page.locator('input[value="maple"]')}).textContent(),'Maple');
    assert.equal(await page.locator('input[value="hanul"], input[value="haetsal"]').count(),0);
@@ -98,11 +98,11 @@ async function main(){
    assert.deepEqual(await page.locator('#live-language option').evaluateAll(options=>options.map(option=>option.value)),['en']);
    await page.waitForTimeout(200);
    await page.screenshot({path:path.join(out,`settings-${captureId}.png`)});
-   await page.locator('#live-settings-apply').click();await page.waitForFunction(()=>window.__liveFx.calls.filter(c=>c.action==='live.start').length===2&&document.querySelector('#live-status').textContent==='듣고 있어요');
+   await page.locator('#live-settings-apply').click();await page.waitForFunction(()=>window.__liveFx.calls.filter(c=>c.action==='live.start').length===2&&document.querySelector('#live-status').textContent==='Listening');
    assert.equal(await page.evaluate(()=>window.__liveFx.calls.filter(c=>c.action==='live.start')[1].args.voice),'maple');
    assert.equal(await page.evaluate(()=>window.__liveFx.calls.filter(c=>c.action==='live.start')[1].args.language),'en');
    await page.locator('#live-settings-open').click();
-   assert.equal(await page.locator('#live-voice-name').textContent(),'한울');
+   assert.equal(await page.locator('#live-voice-name').textContent(),'Maple');
    assert.equal(await page.locator('#live-voice-picker').evaluate(el=>el.open),false);
    await page.locator('#live-settings-back').click();
    // Notification/focus-loss events also close a hidden call and its audio.
