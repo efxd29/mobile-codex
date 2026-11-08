@@ -113,8 +113,25 @@ class NativeBuildTests(unittest.TestCase):
             harness = root / "hook-harness"
             prefix = root / "usr"
             (prefix / "bin").mkdir(parents=True)
-            os.symlink("/bin/echo", prefix / "bin" / "node")
-            os.symlink("/bin/echo", prefix / "bin" / "python3")
+            # Use a tiny purpose-built argv printer instead of the host's
+            # /bin/echo. New Ubuntu runners may use a multicall coreutils binary
+            # that rejects the fake interpreter name supplied through argv[0].
+            fake_utility_source = root / "fake-utility.c"
+            fake_utility = root / "fake-utility"
+            fake_utility_source.write_text(textwrap.dedent("""
+                #include <stdio.h>
+                int main(int argc, char **argv) {
+                    for (int i = 1; i < argc; i++) {
+                        if (i > 1) putchar(' ');
+                        fputs(argv[i], stdout);
+                    }
+                    putchar('\\n');
+                    return 0;
+                }
+            """))
+            subprocess.run([cc, "-o", str(fake_utility), str(fake_utility_source)], check=True)
+            os.symlink(fake_utility, prefix / "bin" / "node")
+            os.symlink(fake_utility, prefix / "bin" / "python3")
             source = root / "hook-harness.c"
             source.write_text(textwrap.dedent("""
                 #define _GNU_SOURCE
