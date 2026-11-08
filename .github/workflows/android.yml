@@ -136,7 +136,7 @@ jobs:
             app/src/main/jniLibs/
             app/src/main/assets/runtime/
             app/src/main/assets/devtools/
-          key: prepared-runtime-v1-${{ runner.os }}-ndk28.2.13676358-${{ hashFiles('tools/runtime-lock.json', 'tools/devtools-lock.json', 'tools/requirements-devtools.txt', 'tools/prepare_runtime.py', 'tools/prepare_devtools.py', 'tools/build_native.py', 'tools/native/**') }}
+          key: prepared-runtime-v2-${{ runner.os }}-ndk30.0.16248370-${{ hashFiles('tools/runtime-lock.json', 'tools/devtools-lock.json', 'tools/requirements-devtools.txt', 'tools/prepare_runtime.py', 'tools/prepare_devtools.py', 'tools/build_native.py', 'tools/native/**') }}
       - name: Restore corresponding tool sources
         id: sources
         if: github.event_name != 'pull_request' || env.PRIVATE_TEST_PR == 'true'
@@ -155,9 +155,9 @@ jobs:
       - name: Prepare pinned Android runtimes on cache miss
         if: steps.prepared.outputs.cache-hit != 'true'
         run: |
-          sdkmanager 'ndk;28.2.13676358'
+          sdkmanager 'ndk;30.0.16248370'
           python3 tools/prepare_runtime.py
-          python3 tools/build_native.py --ndk "$ANDROID_HOME/ndk/28.2.13676358"
+          python3 tools/build_native.py --ndk "$ANDROID_HOME/ndk/30.0.16248370"
           python3 tools/prepare_devtools.py
       - name: Verify prepared runtime even on cache hit
         run: |

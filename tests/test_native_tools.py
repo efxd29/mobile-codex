@@ -26,6 +26,49 @@ class NativeBuildTests(unittest.TestCase):
             cc.write_text("")
             self.assertEqual(native.compiler(ndk), cc)
 
+    def test_libcxx_runtime_path_uses_arm64_shared_ndk_library(self):
+        ndk = Path("/fake/ndk")
+        self.assertEqual(
+            native.libcxx_runtime(ndk),
+            ndk / "toolchains" / "llvm" / "prebuilt" / native.host_tag() / "sysroot" /
+            "usr" / "lib" / "aarch64-linux-android" / "libc++_shared.so",
+        )
+
+    def test_install_libcxx_rejects_missing_required_abi_export(self):
+        with tempfile.TemporaryDirectory() as root:
+            ndk, output = Path(root) / "ndk", Path(root) / "out"
+            source = native.libcxx_runtime(ndk)
+            source.parent.mkdir(parents=True)
+            elf = bytearray(64)
+            elf[:6] = b"\\x7fELF\\x02\\x01"
+            elf[18:20] = (183).to_bytes(2, "little")
+            source.write_bytes(elf)
+            nm = ndk / "toolchains" / "llvm" / "prebuilt" / native.host_tag() / "bin" / "llvm-nm"
+            nm.parent.mkdir(parents=True)
+            nm.write_text("")
+            from unittest.mock import patch
+            with patch.object(native.subprocess, "run", return_value=type("Result", (), {"stdout":"0000 T some_other_symbol"})()):
+                with self.assertRaisesRegex(RuntimeError, "__hash_memory"):
+                    native.install_libcxx(ndk, output)
+            self.assertFalse((output / "libc++_shared.so").exists())
+
+    def test_install_libcxx_copies_runtime_only_after_abi_export_is_verified(self):
+        with tempfile.TemporaryDirectory() as root:
+            ndk, output = Path(root) / "ndk", Path(root) / "out"
+            source = native.libcxx_runtime(ndk)
+            source.parent.mkdir(parents=True)
+            elf = bytearray(b"\\x7fELF\\x02\\x01" + b"\\0" * 12)
+            elf.extend((183).to_bytes(2, "little"))
+            source.write_bytes(elf)
+            nm = ndk / "toolchains" / "llvm" / "prebuilt" / native.host_tag() / "bin" / "llvm-nm"
+            nm.parent.mkdir(parents=True)
+            nm.write_text("")
+            from unittest.mock import patch
+            symbol = "_ZNSt6__ndk113__hash_memoryEPKvm"
+            with patch.object(native.subprocess, "run", return_value=type("Result", (), {"stdout":f"0000 T {symbol}"})()):
+                destination = native.install_libcxx(ndk, output)
+            self.assertEqual(destination.read_bytes(), source.read_bytes())
+
     def test_build_commands_make_pie_launcher_and_16k_safe_preload(self):
         with tempfile.TemporaryDirectory() as root:
             ndk = Path(root)

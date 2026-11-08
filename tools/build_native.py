@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import shutil
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "tools" / "native"
@@ -35,9 +36,42 @@ def compiler(ndk: Path) -> Path:
             candidate = candidate.with_suffix(".exe")
     if not candidate.is_file():
         raise FileNotFoundError(
-            f"Android NDK compiler not found: {candidate}. Use NDK r28c or pass --ndk / set ANDROID_NDK_HOME."
+            f"Android NDK compiler not found: {candidate}. Use NDK r30 (30.0.16248370) or pass --ndk / set ANDROID_NDK_HOME."
         )
     return candidate
+
+
+def libcxx_runtime(ndk: Path) -> Path:
+    return (ndk / "toolchains" / "llvm" / "prebuilt" / host_tag() / "sysroot" / "usr" /
+            "lib" / "aarch64-linux-android" / "libc++_shared.so")
+
+
+def install_libcxx(ndk: Path, output: Path = OUTPUT) -> Path:
+    """Package the exact NDK shared C++ runtime and verify its required ABI export."""
+    source = libcxx_runtime(ndk)
+    if not source.is_file():
+        raise FileNotFoundError(f"NDK libc++_shared.so not found: {source}")
+    binary = source.read_bytes()
+    if len(binary) < 20 or binary[:6] != b"\\x7fELF\\x02\\x01" or int.from_bytes(binary[18:20], "little") != 183:
+        raise RuntimeError(f"NDK libc++_shared.so is not an ARM64 ELF: {source}")
+    nm = ndk / "toolchains" / "llvm" / "prebuilt" / host_tag() / "bin" / "llvm-nm"
+    if sys.platform.startswith("win"):
+        nm = nm.with_suffix(".exe")
+    if not nm.is_file():
+        raise FileNotFoundError(f"NDK llvm-nm not found: {nm}")
+    result = subprocess.run([str(nm), "-D", "--defined-only", str(source)],
+                            check=True, capture_output=True, text=True)
+    required = "_ZNSt6__ndk113__hash_memoryEPKvm"
+    if required not in result.stdout:
+        raise RuntimeError(
+            f"NDK libc++_shared.so does not export {required}; "
+            "use NDK r30 (30.0.16248370) or newer"
+        )
+    output.mkdir(parents=True, exist_ok=True)
+    destination = output / "libc++_shared.so"
+    shutil.copy2(source, destination)
+    print(f"Packaged NDK libc++_shared.so with {required}")
+    return destination
 
 
 def commands(ndk: Path, output: Path = OUTPUT) -> list[list[str]]:
@@ -52,6 +86,7 @@ def commands(ndk: Path, output: Path = OUTPUT) -> list[list[str]]:
 
 def build(ndk: Path, output: Path = OUTPUT) -> None:
     output.mkdir(parents=True, exist_ok=True)
+    install_libcxx(ndk, output)
     for command in commands(ndk, output):
         subprocess.run(command, check=True)
     print(f"Built ARM64 API {API} native launcher files in {output}")
