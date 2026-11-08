@@ -132,8 +132,9 @@ final class NativeLiveRtc implements LiveRtc {
             peer.createOffer(new Sdp() {
                 @Override public void onCreateSuccess(SessionDescription description) { run(() ->
                     peer.setLocalDescription(new Sdp() {
-                        // This transport does not trickle ICE candidates to the app-server.
-                        // Wait for the complete SDP so server-reflexive candidates are included.
+                        @Override public void onSetSuccess() {
+                            // The offer is sent only from ICE_GATHERING_COMPLETE below.
+                        }
                     }, description)); }
             }, new MediaConstraints());
             worker.postDelayed(tick, 250);
