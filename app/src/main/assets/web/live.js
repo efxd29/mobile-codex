@@ -146,6 +146,7 @@
         show('live-dialog'); setSettings(false);
         if (!document.hidden) animate(current);
       }
+      current.phase = data.phase || current.phase || '';
       current.connected = !!data.connected; current.muted = !!data.muted;
       current.input = Number(data.input) || 0; current.output = Number(data.output) || 0;
       if (data.phase === 'connected') cancelReconnect(current);
@@ -185,18 +186,17 @@
         animate(session);
         const result = await call('live.start', {...options, key:session.key, voice, language, expectedThreadId, workspaceKey});
         if (current !== session) { await call('live.stop', {key:session.key}); return; }
-        session.localThread = result.threadId; session.started = true; applyNativeState(result);
+        session.localThread = result.threadId; session.started = true;
+        if (session.phase === 'disconnected') scheduleReconnect(session);
+        applyNativeState(result);
       } catch (error) { fail(session, error); }
       finally { loading = false; update(); }
     }
     async function event(name, data) {
       if (name === 'live.audio') { applyNativeState(data); return; }
       if (name === 'live.interrupted') {
-        const session = current;
-        if ((!data?.key || data.key === session?.key) && session) {
-          if (session.started) await reconnect(session, 'Voice call was interrupted. Tap Retry to reconnect.');
-          else await end({hide:false, message:'Voice call was interrupted.'});
-        }
+        if (!data?.key || data.key === current?.key)
+          await end({hide:false, message:'Voice call was interrupted.'});
         return;
       }
       if (name !== 'live.event') return;
