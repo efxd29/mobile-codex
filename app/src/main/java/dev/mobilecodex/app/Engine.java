@@ -563,7 +563,7 @@ public final class Engine {
         ensureEngineIdle();
         String key = args.getString("key"), sdp = args.getString("sdp");
         String language = args.optString("language", "auto");
-        if (!Set.of("auto", "ko", "en").contains(language)) throw new IOException(t("지원하지 않는 언어 설정입니다."));
+        if (!Set.of("auto", "en").contains(language)) throw new IOException(t("Unsupported language setting."));
         if (key.isBlank() || key.length() > 100 || !sdp.startsWith("v=0") || sdp.length() > 100000)
             throw new IOException(t("음성 연결 요청이 올바르지 않습니다."));
         documents.requireWorkspaceAvailable(); start();
@@ -574,6 +574,7 @@ public final class Engine {
         String voice = args.optString("voice", catalog.optString("defaultV1"));
         boolean found = false;
         for (int i = 0; i < voices.length(); i++) if (voice.equals(voices.optString(i))) found = true;
+        if (Set.of("hanul", "haetsal").contains(voice)) found = false;
         if (!found) throw new IOException(t("지원하지 않는 음성입니다. 목록을 새로고침해 주세요."));
         String model = resolvedModel(args.optString("model"));
         JSONObject config = obj();
@@ -599,8 +600,7 @@ public final class Engine {
         active.put("model", model).put("fastMode", args.optBoolean("fastMode")); persist();
         liveRemote = activeCodexThreadId(); liveLocal = threadId; liveKey = key;
         String instructions = "You are the voice interface for this Codex conversation. Delegate requested file and coding work to Codex. Existing permissions and approvals apply. Do not treat ordinary speech interruption as cancelling work.";
-        if (language.equals("ko")) instructions += " Speak Korean unless the user requests another language.";
-        else if (language.equals("en")) instructions += " Speak English unless the user requests another language.";
+        if (language.equals("en")) instructions += " Speak English unless the user requests another language.";
         JSONObject request = obj("threadId", liveRemote, "version", "v3", "outputModality", "audio", "voice", voice,
             "transport", obj("type", "webrtc", "sdp", sdp), "clientManagedHandoffs", false,
             "includeStartupContext", true, "prompt", instructions, "realtimeSessionId", key);
