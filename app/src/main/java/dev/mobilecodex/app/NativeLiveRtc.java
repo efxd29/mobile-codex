@@ -45,6 +45,7 @@ final class NativeLiveRtc implements LiveRtc {
         });
     }
     private void fail(String message) { if (!closed.get() && listener != null) listener.error(message); }
+    private void recoverable(String message) { if (!closed.get() && listener != null) listener.recoverableError(message); }
     @Override public void start(Listener listener) {
         this.listener = listener;
         run(() -> {
@@ -101,7 +102,7 @@ final class NativeLiveRtc implements LiveRtc {
                     connected = state == PeerConnection.PeerConnectionState.CONNECTED;
                     disconnectedAt = state == PeerConnection.PeerConnectionState.DISCONNECTED ? SystemClock.elapsedRealtime() : 0;
                     listener.connection(state.name().toLowerCase(java.util.Locale.ROOT));
-                    if (state == PeerConnection.PeerConnectionState.FAILED) fail("음성 연결이 끊겼습니다.");
+                    if (state == PeerConnection.PeerConnectionState.FAILED) recoverable("Voice network connection failed.");
                 }); }
             });
             if (peer == null) throw new IllegalStateException("Native WebRTC unavailable");
@@ -145,7 +146,11 @@ final class NativeLiveRtc implements LiveRtc {
     private final Runnable tick = new Runnable() { public void run() {
         if (closed.get()) return;
         long now = SystemClock.elapsedRealtime();
-        if (disconnectedAt > 0 && now - disconnectedAt > 15000) fail("음성 연결이 끊겼습니다.");
+        if (disconnectedAt > 0 && now - disconnectedAt > 15000) {
+            disconnectedAt = 0;
+            recoverable("Voice network connection was lost.");
+            return;
+        }
         // PCM callbacks advance even for silence; user silence never triggers recovery.
         if (watchdog.stalled(now, connected, playbackStarted, lastPlayback)) recoverPlayback();
         listener.levels(inputLevel, outputLevel, recorded, played);
