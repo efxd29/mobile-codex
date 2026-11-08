@@ -1546,8 +1546,8 @@ test('English-only UI excludes the Korean choice and preserves drafts or content
  assert.match(d.querySelector('[data-prompt]').dataset.prompt,/Look through/);
  assert.equal(calls.filter(x=>['runtime.stop','runtime.start'].includes(x.action)).length,0);
 });
-test('a Korean system locale remains English when the native app selects English',async()=>{
- const {w}=setup({}, {language:'en',systemLanguage:'ko-KR'});await tick();
+test('a Korean system locale remains English in System language mode',async()=>{
+ const {w}=setup({}, {language:'system',systemLanguage:'ko-KR'});await tick();
  assert.equal(w.document.documentElement.lang,'en');
  assert.match(w.document.getElementById('prompt').placeholder,/Ask Codex/);
  assert.equal(w.MobileCodexLocale.language(),'en');
