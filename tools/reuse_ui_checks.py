@@ -12,7 +12,7 @@ ROUTING_FILES = {'.github/workflows/android.yml', 'tools/reuse_ui_checks.py',
                  'tests/test_reuse_ui_checks.py', 'docs/ci-release.md',
                  '.github/workflows/cleanup-actions.yml', 'tools/cleanup_actions.py', 'tests/test_cleanup_actions.py',
                  'tools/tested_before.py', 'tests/test_tested_before.py'}
-BROWSER_IRRELEVANT_FILES = {'tools/prepare_devtools.py', 'tools/devtools-lock.json', 'tests/test_devtools.py', 'tools/prepare_runtime.py', 'tests/test_runtime.py'}
+BROWSER_IRRELEVANT_FILES = {'tools/prepare_devtools.py', 'tools/devtools-lock.json', 'tests/test_devtools.py', 'tools/prepare_runtime.py', 'tests/test_runtime.py', 'tools/build_native.py', 'tests/test_native_tools.py'}
 
 def git(*args):
     return subprocess.check_output(['git', *args])
