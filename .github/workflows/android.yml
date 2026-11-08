@@ -87,11 +87,18 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - name: Require the original signing key for update builds
+      - name: Detect available signing key
+        id: signing
         if: github.event_name != 'pull_request' || env.PRIVATE_TEST_PR == 'true'
         env:
           MOBILE_CODEX_SIGNING_JSON: ${{ secrets.MOBILE_CODEX_SIGNING_JSON }}
-        run: python3 tools/sign_ci_apk.py --check-config
+        run: |
+          if [ -n "$MOBILE_CODEX_SIGNING_JSON" ]; then
+            echo "mode=existing" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=fresh" >> "$GITHUB_OUTPUT"
+            echo "No previous signing key found; this run will create a one-time install APK."
+          fi
       - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
         with:
           distribution: temurin
@@ -158,21 +165,43 @@ jobs:
         if: ${{ inputs.apk_only || needs.checks.outputs.tested == 'true' }}
         run: ./gradlew --no-daemon --build-cache assembleRelease
       - name: Sign APK with the original installation key
-        if: github.event_name != 'pull_request' || env.PRIVATE_TEST_PR == 'true'
+        if: (github.event_name != 'pull_request' || env.PRIVATE_TEST_PR == 'true') && steps.signing.outputs.mode == 'existing'
         env:
           MOBILE_CODEX_SIGNING_JSON: ${{ secrets.MOBILE_CODEX_SIGNING_JSON }}
         run: python3 tools/sign_ci_apk.py --apk "$PRODUCTION_APK" --build-tools "$ANDROID_HOME/build-tools/35.0.0"
+      - name: Sign fresh-install APK with a new one-time key
+        if: github.repository == 'efxd29/mobile-codex' && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.signing.outputs.mode == 'fresh'
+        run: |
+          set -euo pipefail
+          KEYSTORE="$RUNNER_TEMP/mobile-codex-fresh-install.jks"
+          STORE_PASSWORD="$(openssl rand -hex 24)"
+          KEY_PASSWORD="$(openssl rand -hex 24)"
+          keytool -genkeypair -noprompt -keystore "$KEYSTORE" -storetype JKS \
+            -storepass "$STORE_PASSWORD" -keypass "$KEY_PASSWORD" \
+            -alias mobile-codex -keyalg RSA -keysize 3072 -validity 10000 \
+            -dname "CN=Mobile Codex Fresh Install, OU=Android, O=efxd29, C=ID"
+          SIGNED_APK="$RUNNER_TEMP/mobile-codex-fresh-install.apk"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign \
+            --ks "$KEYSTORE" --ks-key-alias mobile-codex \
+            --ks-pass "pass:$STORE_PASSWORD" --key-pass "pass:$KEY_PASSWORD" \
+            --v4-signing-enabled false --out "$SIGNED_APK" "$PRODUCTION_APK"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$SIGNED_APK"
+          "$ANDROID_HOME/build-tools/35.0.0/zipalign" -c -P 16 4 "$SIGNED_APK"
+          mkdir -p artifacts/fresh-install
+          cp "$SIGNED_APK" "artifacts/fresh-install/mobile-codex-0.3.9-arm64.apk"
+          sha256sum "artifacts/fresh-install/mobile-codex-0.3.9-arm64.apk" > "artifacts/fresh-install/mobile-codex-0.3.9-arm64.apk.sha256"
+          echo "Created and verified a one-time signed install APK."
       - name: Read the currently published version
-        if: github.event_name != 'pull_request' || env.PRIVATE_TEST_PR == 'true'
+        if: (github.event_name != 'pull_request' || env.PRIVATE_TEST_PR == 'true') && steps.signing.outputs.mode == 'existing'
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release download --repo nokryong/mobile-codex --pattern mobile-codex-update.json --dir artifacts/previous
       - name: Prepare verified update assets
         id: update
-        if: github.event_name != 'pull_request' || env.PRIVATE_TEST_PR == 'true'
+        if: (github.event_name != 'pull_request' || env.PRIVATE_TEST_PR == 'true') && steps.signing.outputs.mode == 'existing'
         run: python3 tools/prepare_update_release.py --apk "$PRODUCTION_APK" --build-tools "$ANDROID_HOME/build-tools/35.0.0" --identity app/build.gradle --previous-manifest artifacts/previous/mobile-codex-update.json --output artifacts/update
       - name: Upload signed update artifact for efxd29
-        if: github.repository == 'efxd29/mobile-codex' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.repository == 'efxd29/mobile-codex' && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.signing.outputs.mode == 'existing'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: mobile-codex-signed-update
@@ -183,8 +212,17 @@ jobs:
           compression-level: 0
           if-no-files-found: error
           retention-days: 7
+      - name: Upload fresh-install APK
+        if: github.repository == 'efxd29/mobile-codex' && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.signing.outputs.mode == 'fresh'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: mobile-codex-fresh-install-apk
+          path: artifacts/fresh-install/*
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 7
       - name: Collect corresponding tool sources on cache miss
-        if: (github.event_name != 'pull_request' || env.PRIVATE_TEST_PR == 'true') && steps.sources.outputs.cache-hit != 'true'
+        if: (github.event_name != 'pull_request' || env.PRIVATE_TEST_PR == 'true') && steps.signing.outputs.mode == 'existing' && steps.sources.outputs.cache-hit != 'true'
         run: python3 tools/prepare_devtools_sources.py
       - name: Publish private pull request test build
         if: env.PRIVATE_TEST_PR == 'true' && !inputs.apk_only
@@ -304,7 +342,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
       - name: Publish versioned GitHub release
-        if: (github.repository == 'nokryong/mobile-codex' || github.repository == 'SeeUSoon93/mobile-codex') && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && !inputs.apk_only
+        if: (github.repository == 'nokryong/mobile-codex' || github.repository == 'SeeUSoon93/mobile-codex') && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && !inputs.apk_only && steps.signing.outputs.mode == 'existing'
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 tools/publish_release.py --folder artifacts/update --apk "${{ steps.update.outputs.apk-path }}" --build-tools "$ANDROID_HOME/build-tools/35.0.0" --previous-manifest artifacts/previous/mobile-codex-update.json
