@@ -27,6 +27,7 @@
     const $ = id => document.getElementById(id);
     let current = null, voices = [], loading = false, settings = false;
     let dismissedKey = '', restoringKey = '';
+    let reconnectAttempts = 0, reconnectTimer = null;
     let voice = localStorage.getItem('live-voice') || '', language = localStorage.getItem('live-language') === 'en' ? 'en' : 'auto';
     const active = () => !!current;
     const status = text => { $('live-status').textContent = t(text); };
@@ -81,7 +82,7 @@
       cancelAnimationFrame(session.frame);
       $('live-orb').style.transform = '';
     }
-    async function end({hide = true, message = ''} = {}) {
+    async function end({hide = true, message = '', retryable = false} = {}) {
       const previous = current; current = null;
       if (previous) {
         dismissedKey = previous.key;
@@ -91,7 +92,19 @@
       }
       if (current) return;
       if (hide) close('live-dialog');
-      else { status(message || '음성 대화가 종료되었습니다.'); $('live-retry').hidden = false; }
+      else if (retryable && reconnectAttempts < 2) {
+        reconnectAttempts++;
+        status('Connection lost. Reconnecting…');
+        $('live-retry').hidden = true;
+        clearTimeout(reconnectTimer);
+        reconnectTimer = setTimeout(() => {
+          reconnectTimer = null;
+          if (!current && $('live-dialog').open) start().catch(error => status(errorText(error)));
+        }, reconnectAttempts === 1 ? 700 : 1600);
+      } else {
+        status(message || 'Voice conversation ended.');
+        $('live-retry').hidden = false;
+      }
       update(); changed();
     }
     function fail(session, error) {
@@ -101,7 +114,11 @@
     function applyNativeState(data) {
       if (!data?.key || data.key === dismissedKey || (current && current.key !== data.key)) return;
       if (data.phase === 'ended') {
-        if (current?.key === data.key) end({hide:false, message:data.error || '음성 대화가 종료되었습니다.'});
+        if (current?.key === data.key) end({
+          hide:false,
+          message:data.error || 'Voice connection ended.',
+          retryable:data.retryable === true
+        });
         return;
       }
       if (!current) {
@@ -110,6 +127,7 @@
         if (!document.hidden) animate(current);
       }
       current.connected = !!data.connected; current.muted = !!data.muted;
+      if (current.connected) reconnectAttempts = 0;
       current.input = Number(data.input) || 0; current.output = Number(data.output) || 0;
       if (data.threadId) current.localThread = data.threadId;
       if (data.userCaption !== undefined) $('live-caption-user').textContent = data.userCaption;
@@ -129,6 +147,7 @@
     }
     async function start() {
       if (current || loading) return;
+      clearTimeout(reconnectTimer); reconnectTimer = null;
       loading = true; setSettings(false); show('live-dialog'); status('연결 중…');
       $('live-caption-user').textContent = ''; $('live-caption-assistant').textContent = '';
       const session = {key:crypto.randomUUID(), scale:1, velocity:0, muted:false, connected:false};
@@ -164,7 +183,7 @@
     // Avoid moving the compact composer button between pointer-down and click.
     $('live-start').addEventListener('pointerdown', e => e.preventDefault());
     $('live-start').addEventListener('click', start);
-    $('live-retry').addEventListener('click', start);
+    $('live-retry').addEventListener('click', () => { reconnectAttempts = 0; start(); });
     $('live-end').addEventListener('click', () => end());
     $('live-task-stop').addEventListener('click', () => call('chat.stop').catch(error => status(errorText(error))));
     $('live-mute').addEventListener('click', async () => {
@@ -196,7 +215,10 @@
       localStorage.setItem('live-voice', voice); localStorage.setItem('live-language', language);
       if (restart) { await end({hide:false}); await start(); } else setSettings(false);
     });
-    $('live-dialog').addEventListener('close', () => { if (current && !$('live-dialog').open) end(); });
+    $('live-dialog').addEventListener('close', () => {
+      clearTimeout(reconnectTimer); reconnectTimer = null;
+      if (current && !$('live-dialog').open) end();
+    });
     // Hiding this page has no effect on native capture, playback, or connection timers.
     document.addEventListener('visibilitychange', () => {
       if (!current) return;
