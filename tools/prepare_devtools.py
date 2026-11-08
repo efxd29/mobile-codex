@@ -483,7 +483,7 @@ def relative_prefix_path(path: str) -> str:
 def relative_symlink_target(member_name: str, linkname: str) -> str:
     """Resolve a package symlink relative to the installed Termux usr prefix."""
     member_path = relative_prefix_path(member_name)
-    link = linkname.replace("\\\\", "/")
+    link = linkname.replace(chr(92), "/")
     if link.startswith("/"):
         prefix = TERMUX_PREFIX.decode("ascii")
         if not link.startswith(prefix + "/"):
