@@ -164,7 +164,11 @@ public final class LiveAudioService extends Service implements Engine.Ui {
         if (rtc != null) { rtc.close(); rtc = null; }
         if (route != null) { route.close(); route = null; }
         Engine.Reply response = pending; pending = null;
-        if (response != null) response.complete(null, new IllegalStateException(error.isEmpty() ? t("음성 연결이 취소되었습니다.") : error));
+        if (response != null) {
+            String failure = error.isEmpty() ? t("Voice connection cancelled.") : error;
+            if (retryableError) failure = "LIVE_RETRYABLE:" + failure;
+            response.complete(null, new IllegalStateException(failure));
+        }
         if (backend != null) backend.handle("live.stop", obj("key", sessionKey), (r,e) -> {});
         if (engine != null) engine.liveAudioChanged(obj("key", sessionKey, "phase", "ended", "error", error, "retryable", retryableError));
         retryableError = false;
