@@ -26,7 +26,7 @@ public final class LiveAudioService extends Service implements Engine.Ui {
     private Engine engine;
     private Engine.Reply pending;
     private String phase = "connecting", threadId = "", error = "", userCaption = "", assistantCaption = "";
-    private boolean muted;
+    private boolean muted, retryableError;
     private double inputLevel, outputLevel;
     private long recorded, played;
     private Runnable connectTimeout;
@@ -40,7 +40,8 @@ public final class LiveAudioService extends Service implements Engine.Ui {
     }
     JSONObject snapshot() { return obj("key", key, "phase", phase, "connected", phase.equals("connected"), "muted", muted,
         "threadId", threadId, "input", muted ? 0 : inputLevel, "output", outputLevel,
-        "recorded", recorded, "played", played, "error", error, "userCaption", userCaption, "assistantCaption", assistantCaption); }
+        "recorded", recorded, "played", played, "error", error, "retryable", retryableError,
+        "userCaption", userCaption, "assistantCaption", assistantCaption); }
     private void emit() { if (engine != null) engine.liveAudioChanged(snapshot()); }
 
     final class LocalBinder extends Binder { LiveAudioService service() { return LiveAudioService.this; } }
@@ -50,7 +51,7 @@ public final class LiveAudioService extends Service implements Engine.Ui {
     void begin(String sessionKey, Runnable onStopped) {
         if (sessionKey == null || sessionKey.isBlank() || !key.isEmpty()) throw new IllegalStateException("Live audio is already active or missing its session key");
         key = sessionKey;
-        phase = "connecting"; threadId = ""; error = ""; userCaption = ""; assistantCaption = "";
+        phase = "connecting"; threadId = ""; error = ""; retryableError = false; userCaption = ""; assistantCaption = "";
         muted = false; recorded = played = 0; inputLevel = outputLevel = 0;
         try {
             NotificationManager manager = getSystemService(NotificationManager.class);
@@ -84,7 +85,7 @@ public final class LiveAudioService extends Service implements Engine.Ui {
             running = this;
             if (engine != null) engine.observe(this);
             startService(new Intent(this, LiveAudioService.class));
-            connectTimeout = () -> { if (sessionKey.equals(key)) fail(t("음성 연결 시간이 초과되었습니다.")); };
+            connectTimeout = () -> { if (sessionKey.equals(key)) fail(t("Voice connection timed out."), true); };
             main.postDelayed(connectTimeout, 45000);
         } catch (RuntimeException error) { stop(sessionKey); throw error; }
     }
@@ -120,6 +121,9 @@ public final class LiveAudioService extends Service implements Engine.Ui {
                     inputLevel = input; outputLevel = output; recorded = captured; played = rendered; emit();
                 }); }
                 public void error(String message) { main.post(() -> { if (sessionKey.equals(key)) fail(t(message)); }); }
+                public void recoverableError(String message) { main.post(() -> {
+                    if (sessionKey.equals(key)) fail(t(message), true);
+                }); }
             });
         } catch (Exception e) { fail(t("음성 연결에 실패했습니다. 다시 연결해 주세요.")); }
     }
@@ -127,7 +131,12 @@ public final class LiveAudioService extends Service implements Engine.Ui {
         if (!sessionKey.equals(key) || rtc == null) throw new IllegalStateException(t("음성 연결이 종료되었습니다."));
         muted = value; rtc.mute(value); emit();
     }
-    private void fail(String message) { error = message == null ? t("음성 연결 오류") : message; stop(key); }
+    private void fail(String message) { fail(message, false); }
+    private void fail(String message, boolean retryable) {
+        error = message == null ? t("Voice connection error") : message;
+        retryableError = retryable;
+        stop(key);
+    }
     @Override public void event(String name, JSONObject data) { main.post(() -> {
         if (!name.equals("live.event") || key.isEmpty() || !key.equals(data.optString("key"))) return;
         JSONObject params = data.optJSONObject("params"); if (params == null) params = obj();
@@ -157,7 +166,8 @@ public final class LiveAudioService extends Service implements Engine.Ui {
         Engine.Reply response = pending; pending = null;
         if (response != null) response.complete(null, new IllegalStateException(error.isEmpty() ? t("음성 연결이 취소되었습니다.") : error));
         if (backend != null) backend.handle("live.stop", obj("key", sessionKey), (r,e) -> {});
-        if (engine != null) engine.liveAudioChanged(obj("key", sessionKey, "phase", "ended", "error", error));
+        if (engine != null) engine.liveAudioChanged(obj("key", sessionKey, "phase", "ended", "error", error, "retryable", retryableError));
+        retryableError = false;
         Runnable callback = stopped; stopped = null;
         if (wakeLock != null) { if (wakeLock.isHeld()) wakeLock.release(); wakeLock = null; }
         if (focus != null) { getSystemService(AudioManager.class).abandonAudioFocusRequest(focus); focus = null; }
