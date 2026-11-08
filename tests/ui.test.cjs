@@ -1530,24 +1530,27 @@ test('edited update source disables old candidate actions and download names its
  assert.equal(w.document.getElementById('update-check').disabled,false);
 });
 
-test('language switch preserves drafts, model content and editor values',async()=>{
- const {w,snapshot,calls}=setup({}, {language:'ko'});await tick();const d=w.document;
+test('legacy Korean language preferences migrate to English without changing drafts or content',async()=>{
+ const {w,snapshot,calls}=setup({}, {language:'ko',systemLanguage:'ko-KR'});await tick();const d=w.document;
  const raw='설정 파일 보내기';w.mobileCodexEvent('state',{...snapshot,messages:[{id:'a',role:'assistant',text:raw}]});
  d.getElementById('prompt').value='기존 초안';d.getElementById('prompt').dispatchEvent(new w.Event('input'));
  d.getElementById('editor').value='사용자 파일';d.getElementById('instructions-editor').value='기존 지침';
+ assert.equal(d.documentElement.lang,'en');
+ assert.match(d.getElementById('settings').textContent,/Settings/);
+ assert.equal([...d.getElementById('language').options].some(option=>option.value==='ko'),false);
  d.getElementById('language').value='en';d.getElementById('language').dispatchEvent(new w.Event('change'));await tick();await tick();
- assert.equal(d.documentElement.lang,'en');assert.match(d.getElementById('settings').textContent,/Settings/);
+ assert.equal(d.documentElement.lang,'en');
  assert.equal(d.getElementById('prompt').value,'기존 초안');assert.equal(d.getElementById('editor').value,'사용자 파일');assert.equal(d.getElementById('instructions-editor').value,'기존 지침');
  w.mobileCodexEvent('state',{...snapshot,messages:[{id:'a',role:'assistant',text:raw}]});
  assert.match(d.getElementById('messages').textContent,/설정 파일 보내기/);assert.match(d.getElementById('messages').textContent,/Copy/);
  assert.match(d.querySelector('[data-prompt]').dataset.prompt,/Look through/);
  assert.equal(calls.filter(x=>['runtime.stop','runtime.start'].includes(x.action)).length,0);
- d.getElementById('language').value='ko';d.getElementById('language').dispatchEvent(new w.Event('change'));await tick();await tick();
- assert.equal(d.getElementById('prompt').value,'기존 초안');assert.match(d.getElementById('settings').textContent,/설정/);
 });
-test('system locale defaults to English outside Korean and catalog copies match',async()=>{
- const {w}=setup({}, {language:'system',systemLanguage:'ja-JP'});await tick();
- assert.equal(w.document.documentElement.lang,'en');assert.match(w.document.getElementById('prompt').placeholder,/Ask Codex/);
+test('system locale and legacy Korean browser choice always render English',async()=>{
+ const {w}=setup({}, {language:'system',systemLanguage:'ko-KR'});await tick();
+ assert.equal(w.document.documentElement.lang,'en');
+ assert.match(w.document.getElementById('prompt').placeholder,/Ask Codex/);
+ assert.equal(w.MobileCodexLocale.language(),'en');
  assert.deepEqual(JSON.parse(JSON.stringify(w.MobileCodexEnglish)), JSON.parse(fs.readFileSync('app/src/main/assets/translations-en.json','utf8')));
 });
 test('inline dictation displays partial text, supports done and cancel, and cannot auto-send',async()=>{
