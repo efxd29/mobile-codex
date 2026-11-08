@@ -109,6 +109,17 @@ jobs:
           packages: 'platforms;android-35 build-tools;35.0.0'
           log-accepted-android-sdk-licenses: false
       - run: python3 -m pip install -r tools/requirements-devtools.txt
+      # The Termux mirror prunes old package archives. Refresh the content-hashed
+      # lock from the current official index before computing cache keys.
+      - name: Refresh pinned Termux devtools package lock
+        run: python3 tools/prepare_devtools.py --write-lock
+      - name: Save refreshed Termux devtools package lock
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        continue-on-error: true
+        with:
+          name: mobile-codex-devtools-lock
+          path: tools/devtools-lock.json
+          retention-days: 7
       - name: Restore exact prepared runtime
         id: prepared
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
