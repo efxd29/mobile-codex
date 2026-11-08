@@ -1964,13 +1964,44 @@
     } catch (error) { target.replaceChildren(); status.textContent = t('사용 한도를 조회할 수 없습니다. ') + error.message; }
     finally { usageLoading = false; $('usage-refresh').disabled = false; }
   }
+  function isRdcServer(name) {
+    const normalized = String(name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    return normalized === 'rdc' || normalized.includes('remotedesktopcommander') || normalized.includes('desktopcommander');
+  }
+  async function logoutRdcServer(name) {
+    const active = await call('terminal.state');
+    if (active.running) throw new Error(t('Finish the active terminal command before logging out of RDC.'));
+    const quote = value => "'" + String(value).replace(/'/g, "'\\''") + "'";
+    const started = await call('terminal.run', {command:'codex mcp logout ' + quote(name)});
+    renderTerminal(started);
+    const id = started.id;
+    let current = started;
+    for (let attempt = 0; attempt < 40 && current.running; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+      current = await call('terminal.state');
+      if (current.id !== id) throw new Error(t('The RDC logout process was replaced by another terminal command.'));
+      renderTerminal(current);
+    }
+    if (current.running) throw new Error(t('RDC logout is still running. Check the terminal before retrying.'));
+    if (current.exitCode !== 0) throw new Error(errorText(current.output || t('RDC logout failed.')));
+    toast(t('RDC logged out.'));
+    await loadTools(true);
+  }
   async function loadTools(force = false) {
     show('tools-dialog'); const target = $('tools-list');
     const scope = currentToolsScope(), generation = ++toolsGeneration;
     if (toolsScope !== scope) { toolCache.fill(null); toolsScope = scope; }
     if (!toolCache.some(Boolean)) target.replaceChildren(node('p', t('불러오는 중…'), 'muted'));
     const cwds = state.cwd ? [state.cwd] : [];
-    const results = await Promise.allSettled([rpc('plugin/list', {cwds, ...(force ? {forceRefetch:true} : {})}), rpc('skills/list', {cwds, ...(force ? {forceReload:true} : {})}), rpc('mcpServerStatus/list', {limit: 100, ...(state.threadId ? {threadId: state.threadId} : {})})]);
+    if (force) {
+      try { await rpc('config/mcpServer/reload', {}); }
+      catch (error) {
+        if (!/method not found|unknown method|unknown variant/i.test(String(error?.message || error)))
+          toast(t('MCP configuration reload failed: ') + errorText(error));
+      }
+    }
+    const mcpParams = {detail:'toolsAndAuthOnly', limit:100, ...(state.threadId ? {threadId:state.threadId} : {})};
+    const results = await Promise.allSettled([rpc('plugin/list', {cwds, ...(force ? {forceRefetch:true} : {})}), rpc('skills/list', {cwds, ...(force ? {forceReload:true} : {})}), rpc('mcpServerStatus/list', mcpParams)]);
     if (generation !== toolsGeneration || scope !== currentToolsScope()) return;
     target.replaceChildren();
     // Plugins, skills and MCP servers each get a tab; long lists stay searchable instead of one long scroll.
@@ -2029,9 +2060,16 @@
       } else {
         for (const server of data.data || []) {
           counts[2]++;
-          const c = card(server.name, (server.runtimeStatus?.status || server.authStatus) + t(' · 도구 ') + Object.keys(server.tools || {}).length + t('개'), panel);
-          if (server.toolsError) c.querySelector('.tool-card-main').append(node('p', errorText(server.toolsError), 'muted tool-card-error'));
-          actions(c, button(t('도구 보기'), () => { logEvent('MCP: ' + server.name, server); show('activity-dialog'); }), button(t('로그인'), async () => { const r = await rpc('mcpServer/oauth/login', {name: server.name}); await call('ui.externalBrowser', {url: r.authorizationUrl}); }));
+          const status = server.runtimeStatus?.status || server.authStatus || 'unknown';
+          const c = card(server.name, status + t(' · 도구 ') + Object.keys(server.tools || {}).length + t('개'), panel);
+          if (server.toolsError || server.error || server.failureReason) c.querySelector('.tool-card-main').append(node('p', errorText(server.toolsError || server.error || server.failureReason), 'muted tool-card-error'));
+          const login = button(isRdcServer(server.name) ? 'RDC login' : t('로그인'), async () => {
+            const r = await rpc('mcpServer/oauth/login', {name:server.name, ...(state.threadId ? {threadId:state.threadId} : {})});
+            await call('ui.externalBrowser', {url:r.authorizationUrl});
+          });
+          const serverActions = [button(t('도구 보기'), () => { logEvent('MCP: ' + server.name, server); show('activity-dialog'); }), login];
+          if (isRdcServer(server.name)) serverActions.push(button('RDC logout', () => logoutRdcServer(server.name), 'secondary-button subtle-danger'));
+          actions(c, ...serverActions);
         }
         if (!data.data?.length) card(t('설정된 MCP 서버가 없습니다'), t('서버 설정에서 HTTP 또는 stdio 서버를 추가할 수 있습니다.'), panel).classList.add('tool-card-notice');
         if (data.nextCursor) panel.append(node('p', t('표시된 서버: 처음 100개'), 'muted'));
@@ -2163,6 +2201,16 @@
     if (name === 'reports.available') { reportsUi?.available(); return; }
     if (name.startsWith('live.')) { liveUi?.event(name, data); return; }
     if (name.startsWith('agents.')) { agentUi?.event(name, data); return; }
+    if (name === 'mcpServer/oauthLogin/completed' || name === 'mcpServer/startupStatus/updated') {
+      if (!data.threadId || data.threadId === state.threadId) {
+        if (name === 'mcpServer/oauthLogin/completed' && data.success === false)
+          toast(t('MCP login failed: ') + errorText(data.error || t('Authentication was not completed.')));
+        else if (name === 'mcpServer/oauthLogin/completed' && data.success === true)
+          toast(t('MCP server connected: ') + String(data.name || ''));
+        if ($('tools-dialog').open) loadTools(false).catch(error => toast(errorText(error)));
+      }
+      return;
+    }
     if (name === 'response') { const p = pending.get(data.id); if (p) { clearTimeout(p.timer); pending.delete(data.id); data.error ? p.reject(new Error(data.error)) : p.resolve(data.result || {}); } return; }
     if (name === 'state') render(data);
     else if (name === 'error') { if (!data.threadId || data.threadId === state.threadId) toast(data.message); }
@@ -2489,7 +2537,7 @@
       if (terminalState.id === session.id && !terminalState.stopping) $('terminal-status').textContent = errorText(error.message);
     } finally { terminalSending = false; terminalControls(); $('terminal-command').focus(); }
   }, 'submit');
-  on('show-tools', () => show('tool-menu-dialog')); on('show-tools-panel', () => { closeToolMenu(); return loadTools(false); }); on('refresh-tools', () => loadTools(true));
+  on('show-tools', () => show('tool-menu-dialog')); on('show-tools-panel', () => { closeToolMenu(); return loadTools(true); }); on('refresh-tools', () => loadTools(true));
   on('marketplace-add', async () => { const source = await input(t('마켓플레이스 추가'), t('Git URL 또는 기기의 로컬 경로')); if (source) { const result = await rpc('marketplace/add', {source}); toast(result.marketplaceName + t(' 추가 완료')); await loadTools(); } });
   on('skill-import', async () => { const r = await call('skills.import'); if (!r.cancelled) { toast(t('스킬 폴더를 가져왔습니다.')); await loadTools(); } });
   $('request-dialog').addEventListener('cancel', e => e.preventDefault());

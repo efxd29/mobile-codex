@@ -47,6 +47,10 @@ test('cached packaging outputs are exact-keyed and still verified',()=>{
  assert.doesNotMatch(cache,/restore-keys/);
  assert.match(build,/prepare_devtools.py --verify/);
  assert.match(build,/test_real_prepared_runtime_contract/);
+ assert.ok(build.includes("sdkmanager 'ndk;30.0.16248370'"));
+ assert.ok(build.includes('prepare_runtime.py --libcxx'));
+ assert.ok(build.includes('build_native.py --ndk'));
+ assert.ok(!build.includes('28.2.13676358'));
  assert.match(build,/cache: gradle/);
 });
 test('normal releases do not upload duplicate APK artifacts',()=>{

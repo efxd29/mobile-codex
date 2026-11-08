@@ -32,6 +32,7 @@ async function fixture(){
     if(action==='live.text')return reply();
     if(action==='live.start'){
       const state={key:args.key,threadId:fx.state.threadId,phase:'connected',connected:true,muted:false,input:.2,output:.4};
+      if(fx.emptyCaptionsOnNextStart){state.userCaption='';state.assistantCaption='';fx.emptyCaptionsOnNextStart=false;}
       fx.peers.push({pc:{connectionState:'connected'},state,key:args.key});
       reply(state);emit('live.audio',state);
     }
@@ -52,11 +53,11 @@ async function main(){
      window.Audio=class {constructor(){throw Error('WebView must not play audio');}};
    });
    page.on('pageerror',e=>errors.push(e.message));
-   await page.goto('http://127.0.0.1:'+server.address().port+'/app?language=ko&theme='+theme);
+   await page.goto('http://127.0.0.1:'+server.address().port+'/app?language=en&theme='+theme);
    await page.waitForFunction(()=>window.mobileCodexEvent&&window.Native&&document.getElementById('live-start'));
    await page.evaluate(fixture);await page.waitForFunction(()=>window.__liveFx.state);
    await page.locator('#live-start').click();
-   try { await page.waitForFunction(()=>document.querySelector('#live-status').textContent==='듣고 있어요'); }
+   try { await page.waitForFunction(()=>document.querySelector('#live-status').textContent==='Listening'); }
    catch(error) { console.log(await page.evaluate(()=>({status:document.querySelector('#live-status').textContent,calls:window.__liveFx.calls.map(c=>c.action),peers:window.__liveFx.peers.map(p=>p.pc.connectionState)})),errors); throw error; }
    assert.equal(await page.locator('#live-dialog').evaluate(el=>el.scrollWidth<=el.clientWidth+1),true);
    assert.equal(await page.locator('#live-orb').evaluate(el=>el.getBoundingClientRect().width>100),true);
@@ -64,50 +65,80 @@ async function main(){
    // keeps the existing peer/session across hide/show and still accepts events.
    const hiddenKey=await page.evaluate(()=>window.__liveFx.calls.find(c=>c.action==='live.start').args.key);
    await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));});
-   await page.evaluate(()=>{const key=window.__liveFx.peers[0].key;window.mobileCodexEvent('live.event',{key,method:'thread/realtime/transcript/done',params:{role:'assistant',text:'background reply'}});});
+   await page.evaluate(()=>{const peer=window.__liveFx.peers[0];peer.state.assistantCaption='background reply';window.mobileCodexEvent('live.event',{key:peer.key,method:'thread/realtime/transcript/done',params:{role:'assistant',text:'background reply'}});});
    await page.waitForFunction(()=>document.querySelector('#live-caption-assistant').textContent==='background reply');
    assert.equal(await page.evaluate(()=>window.__liveFx.calls.filter(c=>c.action==='live.stop').length),0);
    assert.equal(await page.evaluate(()=>window.__liveFx.peers[0].pc.connectionState),'connected');
    await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:false});document.dispatchEvent(new Event('visibilitychange'));});
    assert.equal(await page.evaluate(()=>window.__liveFx.calls.find(c=>c.action==='live.start').args.key),hiddenKey);
    await page.evaluate(()=>window.mobileCodexEvent('live.interrupted',{key:'stale-call'}));
-   assert.equal(await page.locator('#live-status').textContent(),'듣고 있어요');
+   assert.equal(await page.locator('#live-status').textContent(),'Listening');
    await page.screenshot({path:path.join(out,`live-${captureId}.png`)});
    await page.locator('#live-mute').click();assert.equal(await page.locator('#live-mute').getAttribute('aria-pressed'),'true');
    await page.locator('#live-text').fill('read this');await page.locator('#live-text-form').evaluate(form=>form.requestSubmit());
    await page.waitForFunction(()=>window.__liveFx.calls.some(c=>c.action==='live.text'&&c.args.text==='read this'));
-   await page.evaluate(()=>{const key=window.__liveFx.calls.find(c=>c.action==='live.start').args.key;window.mobileCodexEvent('live.event',{key,method:'thread/realtime/transcript/delta',params:{role:'assistant',delta:'<script>safe text</script>'}});});
+   await page.evaluate(()=>{const peer=window.__liveFx.peers[0];peer.state.assistantCaption+='<script>safe text</script>';window.mobileCodexEvent('live.event',{key:peer.key,method:'thread/realtime/transcript/delta',params:{role:'assistant',delta:'<script>safe text</script>'}});});
    assert.equal(await page.locator('#live-caption-assistant').textContent(),'background reply<script>safe text</script>');
    await page.locator('#live-settings-open').click();
    assert.equal(await page.locator('#live-voice').isVisible(),false);
    assert.equal(await page.locator('#live-voice-picker').evaluate(el=>el.open),false);
    await page.screenshot({path:path.join(out,`settings-collapsed-${captureId}.png`)});
    await page.locator('#live-voice-toggle').click();
-   assert.equal(await page.locator('.live-voice-choice').count(),25);
-   assert.deepEqual(await page.locator('.live-voice-group').allTextContents(),['한국어','미국 영어','독일어','기타']);
-   assert.equal(await page.locator('.live-voice-choice').filter({has:page.locator('input[value="haetsal"]')}).textContent(),'햇살');
+   assert.equal(await page.locator('.live-voice-choice').count(),23);
+   assert.deepEqual(await page.locator('.live-voice-group').allTextContents(),['English (US)','German','Other']);
+   assert.equal(await page.locator('.live-voice-choice').filter({has:page.locator('input[value="maple"]')}).textContent(),'Maple');
+   assert.equal(await page.locator('input[value="hanul"], input[value="haetsal"]').count(),0);
    assert.equal(await page.locator('#live-voice-list').evaluate(el=>el.scrollHeight>el.clientHeight&&el.scrollWidth<=el.clientWidth+1),true);
-   await page.locator('.live-voice-choice').filter({has:page.locator('input[value="hanul"]')}).click();
-   await page.locator('input[name="live-voice-choice"][value="hanul"]').press('ArrowRight');
-   assert.equal(await page.locator('#live-voice').inputValue(),'haetsal');
-   await page.locator('input[name="live-voice-choice"][value="haetsal"]').press('ArrowLeft');
-   assert.equal(await page.locator('#live-voice-name').textContent(),'한울');
+   await page.locator('.live-voice-choice').filter({has:page.locator('input[value="maple"]')}).click();
+   await page.locator('input[name="live-voice-choice"][value="maple"]').press('ArrowRight');
+   assert.equal(await page.locator('#live-voice').inputValue(),'bubbie');
+   await page.locator('input[name="live-voice-choice"][value="bubbie"]').press('ArrowLeft');
+   assert.equal(await page.locator('#live-voice-name').textContent(),'Maple');
    assert.equal(await page.evaluate(()=>window.__liveFx.calls.filter(c=>c.action==='live.start').length),1,'Choosing a voice waits for Apply');
-   await page.locator('#live-language').selectOption('ko');
+   await page.locator('#live-language').selectOption('en');
+   assert.deepEqual(await page.locator('#live-language option').evaluateAll(options=>options.map(option=>option.value)),['en']);
    await page.waitForTimeout(200);
    await page.screenshot({path:path.join(out,`settings-${captureId}.png`)});
-   await page.locator('#live-settings-apply').click();await page.waitForFunction(()=>window.__liveFx.calls.filter(c=>c.action==='live.start').length===2&&document.querySelector('#live-status').textContent==='듣고 있어요');
-   assert.equal(await page.evaluate(()=>window.__liveFx.calls.filter(c=>c.action==='live.start')[1].args.voice),'hanul');
+   await page.locator('#live-settings-apply').click();await page.waitForFunction(()=>window.__liveFx.calls.filter(c=>c.action==='live.start').length===2&&document.querySelector('#live-status').textContent==='Listening');
+   assert.equal(await page.evaluate(()=>window.__liveFx.calls.filter(c=>c.action==='live.start')[1].args.voice),'maple');
+   assert.equal(await page.evaluate(()=>window.__liveFx.calls.filter(c=>c.action==='live.start')[1].args.language),'en');
    await page.locator('#live-settings-open').click();
-   assert.equal(await page.locator('#live-voice-name').textContent(),'한울');
+   assert.equal(await page.locator('#live-voice-name').textContent(),'Maple');
    assert.equal(await page.locator('#live-voice-picker').evaluate(el=>el.open),false);
    await page.locator('#live-settings-back').click();
+   // A persistent network disconnect starts one bounded reconnect on the same Codex thread.
+   if (width===320 && theme==='light') {
+     const originalThread=await page.evaluate(()=>window.__liveFx.calls.filter(c=>c.action==='live.start').at(-1).args.expectedThreadId);
+     await page.evaluate(()=>{
+       const peer=window.__liveFx.peers.at(-1),text='Keep this transcript after reconnect';
+       peer.state.userCaption=text;
+       window.mobileCodexEvent('live.event',{key:peer.key,method:'thread/realtime/transcript/done',params:{role:'user',text}});
+       window.__liveFx.emptyCaptionsOnNextStart=true;
+       window.mobileCodexEvent('live.audio',{...peer.state,key:peer.key,phase:'disconnected',connected:false});
+     });
+     await page.waitForFunction(()=>window.__liveFx.calls.filter(c=>c.action==='live.start').length===3,null,{timeout:12000});
+     await page.waitForFunction(()=>document.querySelector('#live-status').textContent==='Listening');
+     assert.equal(await page.locator('#live-caption-user').textContent(),'Keep this transcript after reconnect');
+     assert.equal(await page.evaluate(()=>window.__liveFx.calls.filter(c=>c.action==='live.start')[2].args.expectedThreadId),originalThread);
+     assert.notEqual(
+       await page.evaluate(()=>window.__liveFx.calls.filter(c=>c.action==='live.start')[1].args.key),
+       await page.evaluate(()=>window.__liveFx.calls.filter(c=>c.action==='live.start')[2].args.key)
+     );
+     // A second failure in the same call shows Retry instead of looping forever.
+     await page.evaluate(()=>{
+       const peer=window.__liveFx.peers.at(-1);
+       window.mobileCodexEvent('live.audio',{...peer.state,key:peer.key,phase:'disconnected',connected:false});
+     });
+     await page.waitForFunction(()=>!document.querySelector('#live-retry').hidden,null,{timeout:3000});
+     assert.equal(await page.evaluate(()=>window.__liveFx.calls.filter(c=>c.action==='live.start').length),3);
+   }
    // Notification/focus-loss events also close a hidden call and its audio.
    await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));const key=window.__liveFx.peers.at(-1).key;window.mobileCodexEvent('live.interrupted',{key});});
    await page.waitForFunction(()=>window.__liveFx.peers.every(peer=>peer.pc.connectionState==='closed'));
    await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:false});document.dispatchEvent(new Event('visibilitychange'));});
    await page.locator('#live-end').click();await page.waitForFunction(()=>!document.querySelector('#live-dialog').open);
    assert.equal(await page.evaluate(()=>window.__liveFx.peers.every(peer=>peer.pc.connectionState==='closed')),true);
+   const expectedStarts = width===320 && theme==='light' ? 3 : 2;
    // Permission denial and cancellation while permission is pending never open a backend call.
    await page.evaluate(()=>window.__liveFx.deny=true);await page.locator('#live-start').click();
    await page.waitForFunction(()=>document.querySelector('#live-status').textContent.includes('denied'));
@@ -115,7 +146,7 @@ async function main(){
    await page.evaluate(()=>{window.__liveFx.deny=false;window.__liveFx.hold=true;});await page.locator('#live-start').click();
    await page.waitForFunction(()=>window.__liveFx.releaseMicrophone);await page.locator('#live-end').click();await page.evaluate(()=>window.__liveFx.releaseMicrophone());
    await page.waitForFunction(()=>!document.querySelector('#live-start').disabled);
-   assert.equal(await page.evaluate(()=>window.__liveFx.calls.filter(c=>c.action==='live.start').length),2);
+   assert.equal(await page.evaluate(()=>window.__liveFx.calls.filter(c=>c.action==='live.start').length),expectedStarts);
    // A recreated page restores the already-running native call without starting another one.
    await page.evaluate(()=>{
      const fx=window.__liveFx,state={key:'restored-native-call',phase:'connected',connected:true,muted:true,
@@ -125,7 +156,7 @@ async function main(){
    });
    await page.waitForFunction(()=>document.querySelector('#live-caption-assistant').textContent==='saved reply');
    assert.equal(await page.locator('#live-mute').getAttribute('aria-pressed'),'true');
-   assert.equal(await page.evaluate(()=>window.__liveFx.calls.filter(c=>c.action==='live.start').length),2);
+   assert.equal(await page.evaluate(()=>window.__liveFx.calls.filter(c=>c.action==='live.start').length),expectedStarts);
    await page.locator('#live-end').click();
    assert.deepEqual(errors,[]);await context.close();console.log(`Live native bridge/UI ${width}px ${theme} passed`);
   }

@@ -391,7 +391,7 @@ test('question UI preserves stable question ids and answer array',async()=>{
 test('plugin, skill, MCP screens query real protocol routes',async()=>{
  const {w,calls}=setup();await tick();w.document.getElementById('show-tools').click();await tick();w.document.getElementById('show-tools-panel').click();await tick();await tick();
  const routes=calls.filter(m=>m.action==='rpc').map(m=>m.args.method);
- assert.deepEqual(routes,['plugin/list','skills/list','mcpServerStatus/list']);
+ assert.deepEqual(routes,['config/mcpServer/reload','plugin/list','skills/list','mcpServerStatus/list']);
 });
 test('tool refresh keeps a prior category list when one protocol request fails',async()=>{
  let pluginCalls=0;
@@ -418,6 +418,48 @@ test('plugins, skills and MCP servers have separate tabs with counts and search'
  const search=d.querySelector('.tools-search');search.value='lin';search.dispatchEvent(new w.Event('input'));
  assert.deepEqual([...panels[2].querySelectorAll('.tool-card')].filter(c=>!c.hidden).map(c=>c.querySelector('strong').textContent),['linear']);
  search.value='nothing matches';search.dispatchEvent(new w.Event('input'));assert.equal(d.querySelector('.tools-no-match').hidden,false);
+});
+test('RDC exposes independent OAuth login and logout controls and refresh reloads MCP config',async()=>{
+ const {w,calls}=setup({'rpc':m=>{
+  if(m.args.method==='mcpServerStatus/list')return {data:[{name:'remote-desktop-commander',authStatus:'unauthenticated',tools:{}}]};
+  if(m.args.method==='config/mcpServer/reload')return {};
+  return {data:[],marketplaces:[]};
+ },'terminal.state':()=>({id:'',revision:0,running:false,output:'',exitCode:null}),
+ 'terminal.run':()=>({id:'logout',revision:1,running:false,output:'Removed OAuth credentials',exitCode:0})},{language:'en'});
+ await tick();w.document.getElementById('show-tools').click();await tick();w.document.getElementById('show-tools-panel').click();await tick();await tick();
+ const card=[...w.document.querySelectorAll('.tool-card')].find(c=>c.textContent.includes('remote-desktop-commander'));
+ assert.ok(card);const buttons=[...card.querySelectorAll('button')];
+ const login=buttons.find(b=>b.textContent==='RDC login'),logout=buttons.find(b=>b.textContent==='RDC logout');
+ assert.ok(login);assert.ok(logout);
+ login.click();await tick();
+ assert.ok(calls.some(c=>c.action==='rpc'&&c.args.method==='mcpServer/oauth/login'&&c.args.params.name==='remote-desktop-commander'&&c.args.params.threadId==='t'));
+ w.mobileCodexEvent('mcpServer/oauthLogin/completed',{name:'remote-desktop-commander',threadId:'t',success:true});await tick();await tick();
+ w.document.getElementById('refresh-tools').click();await tick();await tick();
+ assert.ok(calls.some(c=>c.action==='rpc'&&c.args.method==='config/mcpServer/reload'));
+ assert.ok(calls.some(c=>c.action==='rpc'&&c.args.method==='mcpServerStatus/list'));
+ logout.click();await tick();await tick();
+ assert.ok(calls.some(c=>c.action==='terminal.run'&&c.args.command==="codex mcp logout 'remote-desktop-commander'"));
+ assert.ok(calls.some(c=>c.action==='rpc'&&c.args.method==='mcpServerStatus/list'));
+});
+test('closing and reopening the tools menu reloads plugins, skills and MCP servers',async()=>{
+ const {w,calls}=setup({'rpc':m=>{
+  if(m.args.method==='plugin/list')return {marketplaces:[{name:'local',plugins:[{name:'Minecraft plugin',id:'minecraft-plugin'}]}]};
+  if(m.args.method==='skills/list')return {data:[{skills:[{name:'mc-server',description:'Minecraft server helper',path:'/skills/mc/SKILL.md',enabled:true}]}]};
+  if(m.args.method==='mcpServerStatus/list')return {data:[{name:'remote-desktop-commander',authStatus:'connected',tools:{desktop:{}}}]};
+  return {};
+ }},{language:'en'});
+ await tick();const d=w.document;
+ d.getElementById('show-tools').click();await tick();d.getElementById('show-tools-panel').click();await tick();await tick();
+ for(const name of ['Minecraft plugin','mc-server','remote-desktop-commander'])assert.match(d.getElementById('tools-list').textContent,new RegExp(name));
+ d.querySelector('[data-close="tools-dialog"]').click();assert.equal(d.getElementById('tools-dialog').open,false);
+ d.getElementById('show-tools').click();await tick();d.getElementById('show-tools-panel').click();await tick();await tick();
+ for(const name of ['Minecraft plugin','mc-server','remote-desktop-commander'])assert.match(d.getElementById('tools-list').textContent,new RegExp(name));
+ const pluginCalls=calls.filter(c=>c.action==='rpc'&&c.args.method==='plugin/list');
+ const skillCalls=calls.filter(c=>c.action==='rpc'&&c.args.method==='skills/list');
+ assert.equal(pluginCalls.length,2);assert.ok(pluginCalls.every(c=>c.args.params.forceRefetch===true));
+ assert.equal(skillCalls.length,2);assert.ok(skillCalls.every(c=>c.args.params.forceReload===true));
+ assert.equal(calls.filter(c=>c.action==='rpc'&&c.args.method==='mcpServerStatus/list').length,2);
+ assert.equal(calls.filter(c=>c.action==='rpc'&&c.args.method==='config/mcpServer/reload').length,2);
 });
 test('tool recovery action keeps protocol failures handled after menu relocation',async()=>{
  const {w}=setup({'recovery.list':()=>{throw new Error('recovery offline');}});let unhandled=0;
@@ -1471,8 +1513,8 @@ test('language switch preserves drafts, model content and editor values',async()
  assert.match(d.getElementById('messages').textContent,/설정 파일 보내기/);assert.match(d.getElementById('messages').textContent,/Copy/);
  assert.match(d.querySelector('[data-prompt]').dataset.prompt,/Look through/);
  assert.equal(calls.filter(x=>['runtime.stop','runtime.start'].includes(x.action)).length,0);
- d.getElementById('language').value='ko';d.getElementById('language').dispatchEvent(new w.Event('change'));await tick();await tick();
- assert.equal(d.getElementById('prompt').value,'기존 초안');assert.match(d.getElementById('settings').textContent,/설정/);
+ assert.deepEqual([...d.getElementById('language').options].map(option=>option.value),['en']);
+ assert.equal(d.getElementById('prompt').value,'기존 초안');assert.match(d.getElementById('settings').textContent,/Settings/);
 });
 test('system locale defaults to English outside Korean and catalog copies match',async()=>{
  const {w}=setup({}, {language:'system',systemLanguage:'ja-JP'});await tick();

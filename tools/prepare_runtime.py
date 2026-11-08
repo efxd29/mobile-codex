@@ -38,7 +38,19 @@ def patch_host_name(binary, expected_occurrences=2):
     return binary.replace(old, new)
 
 
-def prepare(archive, lock_path=None):
+def copy_ndk_libcxx(source, target):
+    """Copy a verified ARM64 libc++ runtime supplied by the selected Android NDK."""
+    source = Path(source)
+    with source.open('rb') as stream:
+        header = stream.read(20)
+    if header[:6] != b'\x7fELF\x02\x01' or int.from_bytes(header[18:20], 'little') != 183:
+        raise ValueError(f'Not an ARM64 ELF libc++ runtime: {source}')
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(source, target)
+    target.chmod(0o755)
+
+
+def prepare(archive, lock_path=None, ndk_libcxx=None):
     lock = json.loads((lock_path or ROOT / 'tools/runtime-lock.json').read_text())
     if lock.get('testOnly') and archive is None:
         raise ValueError('Private test runtimes require an explicit verified local archive')
@@ -73,8 +85,11 @@ def prepare(archive, lock_path=None):
             member = tar.getmember(source)
             if not member.isfile():
                 raise ValueError(f'Unexpected archive member: {source}')
-            with tar.extractfile(member) as src, target.open('wb') as dst:
-                shutil.copyfileobj(src, dst)
+            if target.name == 'libc++_shared.so' and ndk_libcxx is not None:
+                copy_ndk_libcxx(ndk_libcxx, target)
+            else:
+                with tar.extractfile(member) as src, target.open('wb') as dst:
+                    shutil.copyfileobj(src, dst)
             if target.name == 'libcodex.so':
                 target.write_bytes(patch_host_name(target.read_bytes(), lock.get('hostNameOccurrences', 2)))
             if target.suffix == '.so':
@@ -92,5 +107,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--archive', type=Path)
     parser.add_argument('--lock', type=Path, help='Explicit checksum lock for a private test archive')
+    parser.add_argument('--libcxx', type=Path, help='Use libc++_shared.so from the selected Android NDK')
     args = parser.parse_args()
-    prepare(args.archive, args.lock)
+    prepare(args.archive, args.lock, args.libcxx)

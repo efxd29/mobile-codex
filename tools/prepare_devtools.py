@@ -443,10 +443,7 @@ def safe_tar_members(archive: tarfile.TarFile) -> Iterable[tarfile.TarInfo]:
         if member.islnk() or member.isdev() or member.isfifo():
             raise PackagingError(f"unsupported tar member type: {member.name!r}")
         if member.issym():
-            link = member.linkname.replace("\\", "/")
-            resolved = posixpath.normpath(posixpath.join(posixpath.dirname(normalized), link))
-            if link.startswith("/") or resolved.startswith("../"):
-                raise PackagingError(f"unsafe tar symlink: {member.name!r}")
+            relative_symlink_target(normalized, member.linkname)
         elif not (member.isfile() or member.isdir()):
             raise PackagingError(f"unsupported tar member type: {member.name!r}")
         yield member
@@ -481,6 +478,22 @@ def relative_prefix_path(path: str) -> str:
     if not is_prefix_path(path):
         raise PackagingError(f"package contains data outside Termux usr: {path}")
     return path.removeprefix("data/data/com.termux/files/usr/")
+
+
+def relative_symlink_target(member_name: str, linkname: str) -> str:
+    """Resolve a package symlink relative to the installed Termux usr prefix."""
+    member_path = relative_prefix_path(member_name)
+    link = linkname.replace(chr(92), "/")
+    if link.startswith("/"):
+        prefix = TERMUX_PREFIX.decode("ascii")
+        if not link.startswith(prefix + "/"):
+            raise PackagingError(f"absolute symlink leaves Termux usr: {member_name!r} -> {linkname!r}")
+        target = posixpath.normpath(link[len(prefix) + 1:])
+    else:
+        target = posixpath.normpath(posixpath.join(posixpath.dirname(member_path), link))
+    if target in ("", ".") or target == ".." or target.startswith("../") or target.startswith("/"):
+        raise PackagingError(f"unsafe tar symlink: {member_name!r} -> {linkname!r} (resolved: {target!r})")
+    return target
 
 
 def elf_kind(relative_path: str, info: dict[str, Any]) -> str:
@@ -718,7 +731,7 @@ def prepare(lock: dict[str, Any] | None = None) -> dict[str, Any]:
                     if member.issym():
                         if relative in files or relative in symlinks:
                             raise PackagingError(f"duplicate installed path: {relative}")
-                        symlinks[relative] = posixpath.normpath(posixpath.join(posixpath.dirname(relative), member.linkname))
+                        symlinks[relative] = relative_symlink_target(member.name, member.linkname)
                         continue
                     stream = archive.extractfile(member)
                     if stream is None:

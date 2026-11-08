@@ -74,7 +74,7 @@ public final class LiveAudioService extends Service implements Engine.Ui {
             focus = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
                 .setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
-                .setOnAudioFocusChangeListener(change -> { if (change < 0) stop(sessionKey); }).build();
+                .setOnAudioFocusChangeListener(change -> { if (change == AudioManager.AUDIOFOCUS_LOSS) stop(sessionKey); }).build();
             if (getSystemService(AudioManager.class).requestAudioFocus(focus) != AudioManager.AUDIOFOCUS_REQUEST_GRANTED)
                 throw new IllegalStateException(t("다른 앱에서 오디오를 사용 중입니다."));
             route = new LiveAudioRoute(this, main); route.begin();

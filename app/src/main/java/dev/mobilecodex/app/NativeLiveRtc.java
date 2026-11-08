@@ -33,6 +33,22 @@ final class NativeLiveRtc implements LiveRtc {
     private volatile double inputLevel, outputLevel;
     private volatile boolean playbackStarted;
     private long disconnectedAt;
+    private static final List<String> ICE_SERVER_URLS = List.of(
+        "stun:stun.cloudflare.com:3478",
+        "stun:stun.l.google.com:19302"
+    );
+
+    static List<String> iceServerUrls() { return ICE_SERVER_URLS; }
+
+    private static PeerConnection.RTCConfiguration rtcConfiguration() {
+        List<PeerConnection.IceServer> iceServers = new java.util.ArrayList<>();
+        for (String url : ICE_SERVER_URLS) {
+            iceServers.add(PeerConnection.IceServer.builder(url).createIceServer());
+        }
+        PeerConnection.RTCConfiguration config = new PeerConnection.RTCConfiguration(iceServers);
+        config.sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN;
+        return config;
+    }
 
     NativeLiveRtc(Context context) {
         this.context = context.getApplicationContext();
@@ -77,8 +93,7 @@ final class NativeLiveRtc implements LiveRtc {
                     public void onWebRtcAudioRecordError(String message) { run(() -> fail("마이크 연결이 종료되었습니다.")); }
                 }).createAudioDeviceModule();
             factory = PeerConnectionFactory.builder().setAudioDeviceModule(audio).createPeerConnectionFactory();
-            PeerConnection.RTCConfiguration config = new PeerConnection.RTCConfiguration(List.of());
-            config.sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN;
+            PeerConnection.RTCConfiguration config = rtcConfiguration();
             peer = factory.createPeerConnection(config, new PeerConnection.Observer() {
                 public void onSignalingChange(PeerConnection.SignalingState state) {}
                 public void onIceConnectionChange(PeerConnection.IceConnectionState state) {}
@@ -119,7 +134,9 @@ final class NativeLiveRtc implements LiveRtc {
             peer.createOffer(new Sdp() {
                 @Override public void onCreateSuccess(SessionDescription description) { run(() ->
                     peer.setLocalDescription(new Sdp() {
-                        @Override public void onSetSuccess() { worker.postDelayed(() -> { if (!closed.get()) sendOffer(); }, 2000); }
+                        @Override public void onSetSuccess() {
+                            // The offer is sent only from ICE_GATHERING_COMPLETE below.
+                        }
                     }, description)); }
             }, new MediaConstraints());
             worker.postDelayed(tick, 250);

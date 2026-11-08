@@ -1,7 +1,7 @@
 name: Android APK
 on:
   push:
-    branches: [main]
+    branches: [main, 'fix/**']
   pull_request:
   workflow_dispatch:
     inputs:
@@ -20,7 +20,7 @@ jobs:
     name: Fast UI and source checks
     outputs:
       tested: ${{ steps.reuse.outputs.tested }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Allow slow cold-runner apt downloads plus the complete browser matrix.
     timeout-minutes: 20
     steps:
@@ -77,7 +77,7 @@ jobs:
   build:
     name: Build verified APK once
     needs: checks
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
       PRODUCTION_APK: app/build/outputs/apk/release/app-release-unsigned.apk
@@ -88,7 +88,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Require the original signing key for update builds
-        if: github.event_name != 'pull_request' || env.PRIVATE_TEST_PR == 'true'
+        if: github.ref == 'refs/heads/main' || env.PRIVATE_TEST_PR == 'true'
         env:
           MOBILE_CODEX_SIGNING_JSON: ${{ secrets.MOBILE_CODEX_SIGNING_JSON }}
         run: python3 tools/sign_ci_apk.py --check-config
@@ -109,6 +109,16 @@ jobs:
           packages: 'platforms;android-35 build-tools;35.0.0'
           log-accepted-android-sdk-licenses: false
       - run: python3 -m pip install -r tools/requirements-devtools.txt
+      # The Termux mirror prunes old package archives. Refresh the content-hashed
+      # lock from the current official index before computing cache keys.
+      - name: Refresh pinned Termux devtools package lock
+        run: python3 tools/prepare_devtools.py --write-lock
+      - name: Save refreshed Termux devtools package lock
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: mobile-codex-devtools-lock
+          path: tools/devtools-lock.json
+          retention-days: 7
       - name: Restore exact prepared runtime
         id: prepared
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
@@ -117,10 +127,10 @@ jobs:
             app/src/main/jniLibs/
             app/src/main/assets/runtime/
             app/src/main/assets/devtools/
-          key: prepared-runtime-v1-${{ runner.os }}-ndk28.2.13676358-${{ hashFiles('tools/runtime-lock.json', 'tools/devtools-lock.json', 'tools/requirements-devtools.txt', 'tools/prepare_runtime.py', 'tools/prepare_devtools.py', 'tools/build_native.py', 'tools/native/**') }}
+          key: prepared-runtime-v1-${{ runner.os }}-ndk30.0.16248370-${{ hashFiles('tools/runtime-lock.json', 'tools/devtools-lock.json', 'tools/requirements-devtools.txt', 'tools/prepare_runtime.py', 'tools/prepare_devtools.py', 'tools/build_native.py', 'tools/native/**') }}
       - name: Restore corresponding tool sources
         id: sources
-        if: github.event_name != 'pull_request' || env.PRIVATE_TEST_PR == 'true'
+        if: github.ref == 'refs/heads/main' || env.PRIVATE_TEST_PR == 'true'
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: artifacts/devtools-corresponding-source.zip
@@ -136,9 +146,10 @@ jobs:
       - name: Prepare pinned Android runtimes on cache miss
         if: steps.prepared.outputs.cache-hit != 'true'
         run: |
-          sdkmanager 'ndk;28.2.13676358'
-          python3 tools/prepare_runtime.py
-          python3 tools/build_native.py --ndk "$ANDROID_HOME/ndk/28.2.13676358"
+          sdkmanager 'ndk;30.0.16248370'
+          NDK="$ANDROID_HOME/ndk/30.0.16248370"
+          python3 tools/prepare_runtime.py --libcxx "$NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so"
+          python3 tools/build_native.py --ndk "$NDK"
           python3 tools/prepare_devtools.py
       - name: Verify prepared runtime even on cache hit
         run: |
@@ -158,21 +169,21 @@ jobs:
         if: ${{ inputs.apk_only || needs.checks.outputs.tested == 'true' }}
         run: ./gradlew --no-daemon --build-cache assembleRelease
       - name: Sign APK with the original installation key
-        if: github.event_name != 'pull_request' || env.PRIVATE_TEST_PR == 'true'
+        if: github.ref == 'refs/heads/main' || env.PRIVATE_TEST_PR == 'true'
         env:
           MOBILE_CODEX_SIGNING_JSON: ${{ secrets.MOBILE_CODEX_SIGNING_JSON }}
         run: python3 tools/sign_ci_apk.py --apk "$PRODUCTION_APK" --build-tools "$ANDROID_HOME/build-tools/35.0.0"
       - name: Read the currently published version
-        if: github.event_name != 'pull_request' || env.PRIVATE_TEST_PR == 'true'
+        if: github.ref == 'refs/heads/main' || env.PRIVATE_TEST_PR == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release download --repo nokryong/mobile-codex --pattern mobile-codex-update.json --dir artifacts/previous
       - name: Prepare verified update assets
         id: update
-        if: github.event_name != 'pull_request' || env.PRIVATE_TEST_PR == 'true'
+        if: github.ref == 'refs/heads/main' || env.PRIVATE_TEST_PR == 'true'
         run: python3 tools/prepare_update_release.py --apk "$PRODUCTION_APK" --build-tools "$ANDROID_HOME/build-tools/35.0.0" --identity app/build.gradle --previous-manifest artifacts/previous/mobile-codex-update.json --output artifacts/update
       - name: Collect corresponding tool sources on cache miss
-        if: (github.event_name != 'pull_request' || env.PRIVATE_TEST_PR == 'true') && steps.sources.outputs.cache-hit != 'true'
+        if: (github.ref == 'refs/heads/main' || env.PRIVATE_TEST_PR == 'true') && steps.sources.outputs.cache-hit != 'true'
         run: python3 tools/prepare_devtools_sources.py
       - name: Publish private pull request test build
         if: env.PRIVATE_TEST_PR == 'true' && !inputs.apk_only
@@ -264,6 +275,15 @@ jobs:
             artifacts/devtools-corresponding-source.zip
             LICENSE
             THIRD_PARTY_NOTICES.md
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload unsigned APK for fork pull requests and fix branches
+        if: (github.event_name == 'pull_request' && github.repository != 'SeeUSoon93/mobile-codex') || (github.event_name == 'push' && github.ref != 'refs/heads/main')
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: mobile-codex-pr-unsigned-apk
+          path: app/build/outputs/apk/release/app-release-unsigned.apk
           compression-level: 0
           if-no-files-found: error
           retention-days: 7
