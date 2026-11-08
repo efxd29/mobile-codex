@@ -1776,8 +1776,9 @@
     if (!entries?.length) $('recovery-list').append(node('p', t('저장된 복구 사본이 없습니다.'), 'empty-note'));
   }
   let toolsScope = "", toolsGeneration = 0, toolsTab = 0, toolsQuery = "";
-  // MCP configuration is global to CODEX_HOME; switching chats must not invalidate its cache.
-  const currentToolsScope = () => JSON.stringify([state.cwd, state.account]);
+  // Plugins and skills follow the active folder; MCP status is global to CODEX_HOME.
+  // Account restoration and chat switches must not invalidate an in-flight tools read.
+  const currentToolsScope = () => JSON.stringify([state.cwd]);
   function usageTime(value) {
     if (!Number.isSafeInteger(value) || value <= 0 || value > 8640000000000) return '';
     const date = new Date(value * 1000); if (!Number.isFinite(date.getTime())) return '';
