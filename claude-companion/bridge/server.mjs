@@ -127,7 +127,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "GET" && url.pathname === "/v1/status") {
     const status = await runStatus();
-    return sendJson(res, status.connected ? 200 : 503, status);
+    return sendJson(res, 200, status);
   }
 
   if (req.method === "POST" && url.pathname === "/v1/chat") {
