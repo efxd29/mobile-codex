@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#1f1f1f">
+  <title>Claude Code</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <header class="titlebar">
+    <div class="traffic-lights" aria-hidden="true"><i></i><i></i><i></i></div>
+    <div class="folder">📁</div>
+    <div class="window-title"><strong id="workspaceName">Ben</strong> — ✳ Claude Code <span id="windowPath">— connecting to Termux bridge</span></div>
+    <button id="connectionButton" class="connection-button" aria-label="Connection settings" title="Bridge connection"><span id="connectionDot"></span></button>
+  </header>
+
+  <main class="main-layout">
+    <section class="welcome-frame" aria-label="Claude Code welcome">
+      <div class="legend"><span>Claude Code</span><small id="cliVersion">—</small></div>
+      <div class="welcome-left">
+        <div class="welcome-name" id="welcomeName">Welcome back Ben!</div>
+        <svg class="claude-mark" viewBox="0 0 120 76" role="img" aria-label="Claude Code pixel mark">
+          <path fill="#D97757" d="M14 13h10V7h72v6h10v43h-9v7H23v-7h-9z"/>
+          <path fill="#D97757" d="M29 63h9v11h-9zM43 63h9v11h-9zM76 63h9v11h-9zM90 63h9v11h-9z"/>
+          <path fill="#1F1F1F" d="M35 27h7v10h-7zM80 27h7v10h-7z"/>
+        </svg>
+        <div class="account-line" id="accountLine">Claude Code · connected through Termux</div>
+        <div class="workspace-line" id="workspaceLine">/mnt/sdcard/ClaudeWorkspace</div>
+      </div>
+      <div class="welcome-right">
+        <div class="section-title">Tips for getting started</div>
+        <div class="tip-line" id="tipOne">Run /init to create a CLAUDE.md file with instructions</div>
+        <div class="tip-line" id="tipTwo">Connect the Termux bridge to use your real workspace</div>
+        <div class="section-divider"></div>
+        <div class="section-title">Recent activity</div>
+        <div class="recent-line" id="recentLine">No recent activity</div>
+      </div>
+    </section>
+
+    <section id="conversation" class="conversation" aria-live="polite">
+      <div class="announcement" id="announcement">↑ Claude Code runs with its original CLI in your Ubuntu PRoot environment.</div>
+      <div id="messages" class="messages"></div>
+    </section>
+  </main>
+
+  <footer class="composer-area">
+    <div class="composer">
+      <span class="prompt-chevron">›</span>
+      <textarea id="promptInput" rows="1" placeholder="" autocomplete="off" autocapitalize="sentences"></textarea>
+      <button id="sendButton" class="send-button" aria-label="Send prompt">↑</button>
+    </div>
+    <div class="shortcuts"><span>? for shortcuts</span><span id="bridgeState">BRIDGE OFFLINE</span></div>
+  </footer>
+
+  <div id="settingsBackdrop" class="settings-backdrop hidden">
+    <section class="settings-panel">
+      <div class="settings-header"><strong>Termux bridge</strong><button id="closeSettings" aria-label="Close">×</button></div>
+      <p class="settings-copy">This APK runs independently. Termux stays in the background and provides the original Claude Code CLI. This app never opens the Termux screen.</p>
+      <label>Local bridge URL<input id="bridgeUrl" value="http://127.0.0.1:8765" spellcheck="false"></label>
+      <label>Bridge token<input id="bridgeToken" type="password" placeholder="Paste the token printed by the Termux installer" spellcheck="false"></label>
+      <div class="settings-actions"><button id="testConnection" class="secondary-button">Test connection</button><button id="saveConnection" class="primary-button">Save</button></div>
+      <div id="settingsFeedback" class="settings-feedback">Bridge is local-only. No external server is used.</div>
+    </section>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
