@@ -69,7 +69,7 @@
     return { node, body };
   }
   function setBusy(busy) {
-    $("sendButton").classList.toggle("visible", !busy && $("promptInput").value.trim().length > 0);
+    $("sendButton").classList.toggle("visible", busy || $("promptInput").value.trim().length > 0);
     $("sendButton").textContent = busy ? "■" : "↑";
     $("sendButton").setAttribute("aria-label", busy ? "Stop Claude" : "Send prompt");
   }
